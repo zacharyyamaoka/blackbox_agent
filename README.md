@@ -61,6 +61,10 @@ The workflow checks out the box with its full history, runs
 moves to every `0.x` release. A box tool the fold runs that needs a package lists exactly that in
 `.github/fold-requirements.txt`.
 
+**A private box** builds its site on every push too (CI proves it builds), but skips the Pages steps, since Pages on
+a private repo needs a paid plan. With a plan that allows it, add `with: {pages: always}`; `pages: never` skips Pages
+on a public box.
+
 ## Change one piece: an override
 
 `site/overrides/<tag>.js` replaces or wraps the stock component `<tag>` (any module under the viewer's

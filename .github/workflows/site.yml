@@ -17,6 +17,10 @@ on:
         description: "The blackbox_agent version to build with: a moving tag (v0), an exact one (v0.1.0) or a commit"
         type: string
         default: v0
+      pages:
+        description: "auto: deploy to Pages when the repo is public; always: deploy anyway (a paid plan); never"
+        type: string
+        default: auto
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,7 +28,25 @@ jobs:
     permissions:
       contents: read
       pages: read
+    # WHY the visibility gate (the Agent Activity Agent, 2026-11-25): Pages on a private repo needs a paid plan, so
+    #   configure-pages failed every push of a private box. A private box still builds its site on every push (CI
+    #   proves it builds); only the Pages steps skip. Asked of the API, so it holds for every event, not only push.
+    outputs:
+      deploy: ${{ steps.vis.outputs.deploy }}
     steps:
+      - id: vis
+        name: Pages or not
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES: ${{ inputs.pages }}
+        run: |
+          private=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)
+          if [ "$PAGES" = always ] || { [ "$PAGES" = auto ] && [ "$private" = false ]; }; then
+            echo deploy=true >> "$GITHUB_OUTPUT"
+          else
+            echo deploy=false >> "$GITHUB_OUTPUT"
+            echo "::notice::Built the site; skipped Pages (private: $private, pages: $PAGES). Pages on a private repo needs a paid plan; pass pages: always to deploy anyway."
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -37,11 +59,14 @@ jobs:
           if [ -f .github/fold-requirements.txt ]; then extra=(--with-requirements .github/fold-requirements.txt); fi
           uvx "${extra[@]}" --from "git+https://github.com/zacharyyamaoka/blackbox_agent@${BLACKBOX_REF}" blackbox build --box . --out _site
       - uses: actions/configure-pages@v5
+        if: steps.vis.outputs.deploy == 'true'
       - uses: actions/upload-pages-artifact@v3
+        if: steps.vis.outputs.deploy == 'true'
         with:
           path: _site
   deploy:
     needs: build
+    if: needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write
