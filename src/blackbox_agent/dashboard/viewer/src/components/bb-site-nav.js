@@ -73,6 +73,8 @@ bb-site-nav .bbs-head { display: flex; align-items: stretch; gap: 0 12px; height
 bb-site-nav .bbs-brand { align-self: center; flex: 0 1 auto; min-width: 0; max-width: 34%; font-weight: 650; font-size: 15px; line-height: 20px;
   color: var(--bb-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 bb-site-nav .bbs-brand:hover { text-decoration: underline; text-underline-offset: 3px; }
+bb-site-nav .bbs-brand:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+bb-site-nav .bbs-home { color: var(--bb-muted, #71717a); font-weight: 400; }
 bb-site-nav .bbs-row { display: flex; align-items: flex-end; flex-wrap: nowrap; gap: 0 2px; min-width: 0; overflow: hidden; }
 bb-site-nav .bbs-dash { flex: 1 1 auto; padding-left: 4px; }
 bb-site-nav .bbs-tab { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--bb-muted); background: none;
@@ -280,14 +282,16 @@ bb-site-nav .bbs-fail { align-self: center; color: var(--bb-muted); font-size: 1
     const repoName = repo ? (() => { try { return new URL(repo).pathname.replace(/^\/|\/$|\.git$/g, ''); } catch { return repo; } })() : '';
     const gh = repo ? `<a class="bbs-icon" href="${esc(repo)}" target="_blank" rel="noopener" data-github aria-label="${esc(repoName)} on GitHub" title="${esc(repoName)} on GitHub">${GITHUB}</a>` : '';
     const gear = `<button type="button" class="bbs-icon" data-settings aria-haspopup="dialog" aria-expanded="false" aria-controls="${this.popId('settings')}" aria-label="Settings" title="Settings">${GEAR}</button>`;
-    const brand = `<a class="bbs-brand" href="${esc(model.site.landing)}" title="${esc(model.site.name)}: the landing page">${esc(model.site.name)}</a>`;
+    // WHY the ⌂ and the name (Zach via the Vibe Tracks Agent, 2026-11-25): a track opens on the dashboard, and the box
+    // name at the far left did not say it went back to the landing; the ⌂ takes the switcher's "/" place (same width)
+    const brand = `<a class="bbs-brand" href="${esc(model.site.landing)}" title="Landing page" aria-label="${esc(model.site.name)}: Landing page"><span class="bbs-home" aria-hidden="true">⌂</span> ${esc(model.site.name)}</a>`;
     const right = `<div class="bbs-right">${pill}${gh}${gear}</div>`;
     let head;
     if (model.layout === 'switcher') {
       // "Box name / Black box ▾": a WAI-ARIA menu button; the menu (every dashboard by group) is drawn when it opens
       const icon = dash ? SITE_ICONS[dash.icon] || (dash.group && dash.group.kind === 'domain' ? `<span class="dot"${groupVars(dash.group)}></span>` : '') : '';
       const name = dash ? dash.label : 'Dashboards';
-      head = `<div class="bbs-head is-switcher">${brand}<span class="bbs-slash" aria-hidden="true">/</span>`
+      head = `<div class="bbs-head is-switcher">${brand}`
         + `<div class="bbs-switch-wrap" role="navigation" aria-label="Dashboards"><button type="button" class="bbs-switch" data-switch aria-haspopup="menu" aria-expanded="false" aria-controls="${this.popId('menu')}"`
         + ` aria-label="${esc(dash ? `Dashboard: ${name}. Switch dashboard` : 'Dashboards')}" title="Switch dashboard">${icon}<span class="lbl">${esc(name)}</span>${SITE_ICONS.chevron}</button></div>`
         + `${right}</div>`;
