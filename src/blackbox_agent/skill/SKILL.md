@@ -16,7 +16,10 @@ far. Where the box's `AGENTS.md` and this skill differ, the box wins.
    `ideas.md` (the queue) and the leaderboard (the box's own command, or the newest rows of `ledger.jsonl`).
 2. **Propose one solution.** Pick one idea from `ideas.md`, or propose one. Write it as `solutions/<id>/` with a
    `meta.json`: `id`, `parent` (the best, or a niche winner), `change` (the one change, in words), `proposed_by`
-   (`agent`, `model`, `session`), `created`, `tags`. Use the box's own `new` command when it has one; a solution
+   (`agent`, `model`, `session`), `created`, `tags`, and its names: `name` (a dotted `FAMILY.VARIANT.SUB...` id under
+   its family, e.g. `P5.s.pass3`), `summary` (at most 150 characters), `description`, and `expect`: what you expect it
+   to achieve ("no idea, trying to see what sticks" counts). **Commit it before you evaluate**: `blackbox check` flags an
+   `expect` written in or after the commit that scores it. Use the box's own `new` command when it has one; a solution
    without a proposer is refused.
 3. **Evaluate it on dev**, with the box's evaluate command (its `AGENTS.md`). That writes
    `solutions/<id>/scorecard.json`, appends one row to `ledger.jsonl` (append-only: never edit or delete a row) and

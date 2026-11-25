@@ -12,4 +12,4 @@ the fold (git -> state.json), the landing page and dashboard, the site build, th
     blackbox review --box . confirmed <id>  # confirm (or undo) what its agents decided for you
 """
 
-__version__ = "0.1.15"
+__version__ = "0.1.16"

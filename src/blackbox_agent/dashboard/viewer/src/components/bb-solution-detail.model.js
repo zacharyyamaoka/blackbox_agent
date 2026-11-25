@@ -4,6 +4,7 @@
    chart, ideas and ledger history read files the viewer never reads (a solution's own outputs, the raw records); they are
    left out, not approximated. Nothing here knows what a solution is. */
 import { costMeta } from './bb-frontier.model.js';
+import { EXPECT_WHEN } from '../core/derive.js';
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const RELATIVE_TIE = 1e-9;
@@ -26,6 +27,15 @@ export function ablationFacts(row) {
 
 /** A relative change in percent, or null. */
 export const pct = (a, b) => (fin(a) && fin(b) && b ? (100 * (a - b)) / b : null);
+
+/** CONTRACT §24: a row's name, summary, description and prediction (with where it sits against the result), or null for
+    a box that names nothing (the fold gave the row no `expect_when`): the page is then as before. */
+export function namesOf(row) {
+  if (!row || row.expect_when === undefined) return null;
+  return { name: row.name ?? null, summary: row.summary ?? null, description: row.description ?? null, expect: row.expect ?? null,
+    when: row.expect_when, status: EXPECT_WHEN[row.expect_when] ?? row.expect_when, expect_commit: row.expect_commit ?? null,
+    result_commit: row.result_commit ?? null, lineage: Array.isArray(row.lineage) ? row.lineage : [] };
+}
 
 export function makeDetail(data, id) {
   const its = (data.iterations || []).filter((r) => r && r.id);
@@ -99,7 +109,7 @@ export function makeDetail(data, id) {
   const list = ablation ? abls : ordered;
   const k = list.indexOf(row);
   return {
-    row, id, ablation, direction, facts: ablation ? ablationFacts(row) : null,
+    row, id, names: namesOf(row), ablation, direction, facts: ablation ? ablationFacts(row) : null,
     n: row.n, total: its.length, gen: row.gen ?? null, rank, admissibleCount: adm.length, best, bestAt, bestBefore,
     parent, vsParent: parent && !parent.missing ? pct(row.objective, parent.objective) : null, chain, children,
     holdoutVsDev: pct(row.holdout, row.objective), gates, costs, hasCosts: !!crow, costsSlice: costRows.length > 0, runs,

@@ -17,7 +17,24 @@ export function feedbackRows(rows) {
   });
 }
 
+/** CONTRACT §24: where a prediction sits against its first result (the fold's `expect_when`, from git history), in words. */
+export const EXPECT_WHEN = {
+  'before-result': 'stated before the result',
+  'with-result': 'written in the same commit as the result',
+  'after-result': 'written after the result',
+  'edited-after-result': 'changed after the result',
+  'no-result-yet': 'stated; no result yet',
+  'not-stated': 'not stated before the run',
+};
+
+/** iteration, ablation and unscored rows (CONTRACT §24): `expect_status`, the words for `expect_when`. Only a row the fold
+    gave `expect_when` (a box that names its iterations) gains it; a row's own key of the same name wins. */
+export function nameRows(rows) {
+  return rows.map((r) => (r.expect_when === undefined || r.expect_status !== undefined ? r
+    : { ...r, expect_status: EXPECT_WHEN[r.expect_when] ?? r.expect_when }));
+}
+
 /** slice -> its row deriver. */
-export const DERIVED = { feedback: feedbackRows };
+export const DERIVED = { feedback: feedbackRows, iterations: nameRows, ablations: nameRows, unscored: nameRows };
 
 export const deriveRows = (slice, rows) => (DERIVED[slice] ? DERIVED[slice](rows) : rows);

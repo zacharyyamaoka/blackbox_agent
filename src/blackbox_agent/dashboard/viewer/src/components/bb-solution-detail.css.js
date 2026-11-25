@@ -60,4 +60,10 @@ bb-solution-detail .pager a { text-decoration: none; }
   bb-solution-detail dl.prov { grid-template-columns: minmax(0, 1fr); }
   bb-solution-detail dl.prov dd { margin-bottom: 4px; }
 }
+/* CONTRACT §24: the dotted name as its prefixes, the summary as the page's lead */
+bb-solution-detail .bbs-name { font-size: 13px; color: var(--bb-muted, #666); margin: -4px 0 2px; overflow-wrap: anywhere; }
+bb-solution-detail .bbs-name .seg + .seg { opacity: .85; }
+bb-solution-detail .bbs-summary { font-size: 16px; line-height: 1.45; margin: 4px 0 10px; max-width: 72ch; overflow-wrap: anywhere; }
+bb-solution-detail .bbs-md { font-size: 14px; line-height: 1.5; max-width: 80ch; overflow-wrap: anywhere; }
+bb-solution-detail .bbs-md > :first-child { margin-top: 0; }
 `;

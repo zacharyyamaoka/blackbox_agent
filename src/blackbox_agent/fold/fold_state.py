@@ -252,6 +252,17 @@ def needs_module():
     return sys.modules["_bb_needs"]
 
 
+def names_module():
+    """folds/_bb_names.py: a solution's dotted name, summary, description and prediction (CONTRACT §24), shared with
+    `blackbox check` and tools/suggest_names.py."""
+    if "_bb_names" not in sys.modules:
+        spec = importlib.util.spec_from_file_location("_bb_names", HERE / "folds" / "_bb_names.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["_bb_names"] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules["_bb_names"]
+
+
 def needs_from(ideas: list[dict], status: dict, need_text: str | None = None, clock: str | None = None) -> list[dict]:
     """What only Zach can answer: status.json's blocked_on and ideas.md's open Suggestions for Zach, then (CONTRACT §23)
     the open questions of the box's needs.jsonl, each with its default, when it lands, its kind and its Receipt step.
@@ -742,6 +753,11 @@ def fold_standard(t: Tree) -> tuple[dict, dict]:
     ids = sorted({p.split("/")[1] for p in t.files if re.match(r"^solutions/[^/]+/meta\.json$", p)}, key=natural)
     metas = {sid: t.json(f"solutions/{sid}/meta.json") or {} for sid in ids}
     adds = added_in(t)
+    # CONTRACT §24: only a box whose solutions use the naming keys gains the row fields (every other box folds byte
+    # for byte as before); where each prediction sits against its first result is read from git history
+    nm = names_module()
+    named = nm.uses_names(metas)
+    times = nm.timings(t.git, t.sha, metas) if named else {}
     gen: dict[str, int] = {}
 
     def generation(sid: str, seen=()) -> int:
@@ -770,6 +786,8 @@ def fold_standard(t: Tree) -> tuple[dict, dict]:
                "holdout": finite((hold.get(sid) or {}).get("objective")), "commit": commit, "best_holder": None}
         if tiebreaks(d):  # only a box whose rows name tie-breaks gains the field (every other state folds as before)
             out["tiebreaks"] = tiebreaks(d)
+        if named:
+            out.update(nm.row_fields(m, times.get(sid)))
         return gate_columns(out, obj_doc["gates"])
 
     scored = [sid for sid in ids if sid in dev]
@@ -790,7 +808,8 @@ def fold_standard(t: Tree) -> tuple[dict, dict]:
             res = gate_results(t, r, obj_doc["gates"], runs, split)
             if res is not None:
                 r["gate_results"] = res
-    unscored = [{"id": s, "parent": metas[s].get("parent"), "change": metas[s].get("change"), "created": metas[s].get("created")}
+    unscored = [{"id": s, "parent": metas[s].get("parent"), "change": metas[s].get("change"), "created": metas[s].get("created"),
+                 **(nm.row_fields(metas[s], times.get(s)) if named else {})}
                 for s in ids if s not in dev]
 
     # ideas.md now, and its open "I'll try" count at every committed version up to the ref

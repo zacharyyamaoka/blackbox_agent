@@ -9,7 +9,8 @@
    solution fires bb-open {kind: 'solution', id, href} (the page follows links.solution unless a listener prevents it). */
 import { BBElement, esc } from '../core/element.js';
 import { register } from '../core/registry.js';
-import { makeDetail, idFromUrl, pct } from './bb-solution-detail.model.js';
+import { makeDetail, idFromUrl, pct, namesOf } from './bb-solution-detail.model.js';
+import { marked } from '../../vendor/marked/marked.esm.js';
 import './bb-evidence.js';
 import schema from './bb-solution-detail.schema.js';
 import css from './bb-solution-detail.css.js';
@@ -94,8 +95,10 @@ export class BBSolutionDetail extends BBElement {
     this.innerHTML = `<div class="bbs">
       <div class="kicker">${kicker}</div>
       <h1>${esc(r.id)}</h1>
+      ${this.nameHead(D.names)}
       <div class="change">${badges}${esc(r.change || '')}</div>
       <div class="verdict">${verdict}</div>
+      ${this.expectBlock(D.names, `${Ut(r.objective)} · ${esc(r.verdict || '—')}`)}
       ${cards}${fails}
       ${D.ablation ? this.ablationBlock(D) : ''}
       <section class="blk"><h2>Lineage</h2>${this.lineage(D)}</section>
@@ -122,12 +125,35 @@ export class BBSolutionDetail extends BBElement {
     this.innerHTML = `<div class="bbs bbs-unscored">
       <div class="kicker">${esc(d.box || '')} · registered, not scored yet · created ${date(u.created)}</div>
       <h1>${esc(u.id)}</h1>
+      ${this.nameHead(namesOf(u))}
       <div class="change">${esc(u.change || '')}</div>
+      ${this.expectBlock(namesOf(u), 'no result yet: not scored')}
       <div class="bb-empty" data-empty="bb-solution-detail"><b>Not scored yet${o.ruler ? ` on ruler ${esc(o.ruler)}` : ''}.</b>
         <div class="bb-fills">Its ${esc(o.name || 'objective')}, its gates and its rank appear here once the box's evaluation scores it: the ledger gets its row, and the fold of the next commit reads it.</div></div>
       <section class="blk"><h2>Lineage</h2><dl class="prov"><dt>parent</dt><dd>${parent}</dd></dl></section>
     </div>`;
     this.wire();
+  }
+
+  /** CONTRACT §24: the dotted name (its prefixes, the family first) and the summary under the id; nothing for a box that
+      names nothing. A key the solution left out is said to be missing, never invented. */
+  nameHead(N) {
+    if (!N) return '';
+    const crumbs = N.lineage.length ? N.lineage.map((p, i) => `<span class="seg">${esc(i ? p.slice(N.lineage[i - 1].length) : p)}</span>`).join('')
+      : N.name ? esc(N.name) : '<span class="faint">no name</span>';
+    return `<div class="bbs-name"><span class="bb-mono" title="${esc(N.name || '')}">${crumbs}</span></div>
+      <p class="bbs-summary">${N.summary ? esc(N.summary) : '<span class="faint">No summary written.</span>'}</p>`;
+  }
+
+  /** CONTRACT §24: the prediction beside what happened, then the description. */
+  expectBlock(N, result) {
+    if (!N) return '';
+    const late = ['with-result', 'after-result', 'edited-after-result'].includes(N.when);
+    const when = `<span class="${late ? 'bad' : 'faint'}">${esc(N.status)}${N.expect_commit ? ` · <span class="bb-mono">${esc(N.expect_commit)}</span>` : ''}${N.result_commit ? ` · result <span class="bb-mono">${esc(N.result_commit)}</span>` : ''}</span>`;
+    return `<section class="blk bbs-expect"><h2>Expected vs what happened</h2>
+      <dl class="prov"><dt>expected</dt><dd>${N.expect ? esc(N.expect) : '<span class="faint">not stated before the run</span>'}<div>${when}</div></dd>
+      <dt>happened</dt><dd>${result}</dd></dl></section>
+      <section class="blk bbs-desc"><h2>Description</h2>${N.description ? `<div class="bbs-md">${marked.parse(N.description, { async: false, gfm: true })}</div>` : '<div class="faint">No description written.</div>'}</section>`;
   }
 
   verdictLine(D, Ut) {

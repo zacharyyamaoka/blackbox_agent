@@ -135,6 +135,9 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
     if no_proposer:
         notes.append(f"{len(no_proposer)} solution(s) record no proposer (agent + model): {', '.join(no_proposer[:8])}")
     problems += format_problems(tracked, text)
+    name_problems, name_notes = names_findings(box, sha, tracked, text)
+    problems += name_problems
+    notes += name_notes
     need_problems, need_notes = needs_findings(tracked, text)
     problems += need_problems
     notes += need_notes
@@ -238,6 +241,31 @@ def format_problems(tracked: set[str], text) -> list[str]:
     for path in feedback:
         found += fb.problems(path, front(path)[0])
     return [f"[{p['lint']}] {p['where']}: {p['what']}; fix: {p['fix']}" for p in found]
+
+
+def names_module():
+    """The fold's folds/_bb_names.py: iteration names and predictions (viewer CONTRACT §24), the rules the fold reads by."""
+    saved = list(sys.path)
+    try:
+        sys.path[:0] = [str(FOLD.parent / "folds")]
+        return importlib.import_module("_bb_names")
+    finally:
+        sys.path[:] = saved
+
+
+def names_findings(box: Path, sha: str, tracked: set[str], text) -> tuple[list[str], list[str]]:
+    """CONTRACT §24: every solution's `name` a dotted FAMILY.VARIANT... id that never contradicts its `parent`, its
+    `summary` at most 150 characters, and its `expect` committed before its first scored ledger row (read from git
+    history: "expect written after the result"). A box that names nothing gets one note, never a problem."""
+    metas = {}
+    for meta in sorted(p for p in tracked if re.fullmatch(r"solutions/[^/]+/meta\.json", p)):
+        try:
+            metas[meta.split("/")[1]] = json.loads(text(meta) or "{}")
+        except json.JSONDecodeError:
+            continue  # already a problem above
+    nm = names_module()
+    found, notes = nm.box_problems(lambda *a: git(box, *a), sha, metas)
+    return [f"[{p['lint']}] {p['where']}: {p['what']}; fix: {p['fix']}" for p in found], notes
 
 
 def needs_module():
