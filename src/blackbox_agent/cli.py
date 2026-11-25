@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import functools
 import http.server
 import shutil
@@ -15,6 +16,7 @@ from blackbox_agent import __version__
 from blackbox_agent.site import PKG, BoxError, build
 
 SKILL = PKG / "skill" / "SKILL.md"
+DEFAULT_PORT = 8765
 
 
 def _build(a: argparse.Namespace) -> int:
@@ -26,17 +28,33 @@ def _build(a: argparse.Namespace) -> int:
     return 0
 
 
+def _server(port: int | None, handler) -> http.server.ThreadingHTTPServer:
+    """A server on 127.0.0.1: the port asked for; with none asked, 8765, else any free one.
+    WHY (Zach hit it, 2026-11-24): many servers run on this machine, and a handoff command must work on the first click;
+    only a port the user named may refuse to start, and it says which."""
+    try:
+        return http.server.ThreadingHTTPServer(("127.0.0.1", DEFAULT_PORT if port is None else port), handler)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+        if port is not None:
+            raise BoxError(f"port {port} is in use: name another --port, or leave --port out to get a free one") from None
+        return http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+
+
 def _serve(a: argparse.Namespace) -> int:
     tmp = Path(tempfile.mkdtemp(prefix="blackbox-serve-"))
     # WHY: a plain `kill` (SIGTERM) must remove the temporary build too, as Ctrl-C does
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         out = tmp / "site"
-        record = build(Path(a.box), out, a.ref)
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(out))
-        with http.server.ThreadingHTTPServer(("127.0.0.1", a.port), handler) as server:
-            print(f"{record['box']} @ {record['ref'][:7]}: http://127.0.0.1:{server.server_address[1]}/  "
-                  f"(dashboard: /dashboard/; Ctrl-C stops it)", flush=True)
+        with _server(a.port, handler) as server:  # bound before the build: a busy --port fails at once
+            record = build(Path(a.box), out, a.ref)
+            port = server.server_address[1]
+            print(f"http://127.0.0.1:{port}/  {record['box']} @ {record['ref'][:7]} (dashboard: /dashboard/; "
+                  f"Ctrl-C stops it)" + (f"; {DEFAULT_PORT} was busy" if a.port is None and port != DEFAULT_PORT else ""),
+                  flush=True)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:
@@ -92,7 +110,9 @@ def parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("serve", help="build the box into a temporary folder and serve it on 127.0.0.1")
     p.add_argument("--box", default=".")
-    p.add_argument("--port", type=int, default=8765, help="default 8765; 0 picks a free one")
+    p.add_argument("--port", type=int, default=None,
+                   help=f"default {DEFAULT_PORT}, or a free port when {DEFAULT_PORT} is busy; a port you name must be free "
+                        "(0 picks a free one)")
     p.add_argument("--ref", default="HEAD")
     p.set_defaults(run=_serve)
 

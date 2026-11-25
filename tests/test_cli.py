@@ -5,12 +5,16 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
+import re
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -128,8 +132,59 @@ class FreshBox(unittest.TestCase):
 
     @staticmethod
     def _import_maps(page: str) -> list:
-        import re
         return [json.loads(m) for m in re.findall(r'<script type="importmap"[^>]*>(.*?)</script>', page, re.S)]
+
+    def serve(self, *args: str) -> subprocess.Popen:
+        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
+        return subprocess.Popen([sys.executable, "-m", "blackbox_agent", "serve", "--box", str(self.box), *args],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+
+    @staticmethod
+    def occupy(port: int) -> socket.socket | None:
+        """A listening socket on 127.0.0.1:port; None when a peer already holds it (busy either way)."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError as e:
+            s.close()
+            if e.errno != errno.EADDRINUSE:
+                raise
+            return None
+        s.listen(1)
+        return s
+
+    def test_serve_falls_back_to_a_free_port_when_the_default_is_busy(self):
+        # WHY (Zach hit it, 2026-11-24): many servers run on this machine, and a handoff command must work on the first
+        # click; `blackbox serve` crashed with Errno 98 when 8765 was taken
+        held = self.occupy(8765)
+        proc = self.serve()
+        try:
+            first = proc.stdout.readline()
+            m = re.match(r"http://127\.0\.0\.1:(\d+)/", first)
+            self.assertTrue(m, f"the first line is the URL: {first!r} {proc.stderr.read() if proc.poll() is not None else ''}")
+            self.assertNotEqual(int(m.group(1)), 8765)
+            with urllib.request.urlopen(m.group(0), timeout=10) as r:
+                self.assertEqual(r.status, 200)
+                self.assertIn(b"<bb-headliner", r.read())
+        finally:
+            proc.terminate()
+            proc.wait(timeout=10)
+            if held:
+                held.close()
+
+    def test_serve_on_a_busy_port_you_named_fails_and_names_the_port(self):
+        held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        port = held.getsockname()[1]
+        try:
+            proc = self.serve("--port", str(port))
+            out, err = proc.communicate(timeout=60)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn(f"port {port} is in use", err)
+            self.assertNotIn("Traceback", err)
+        finally:
+            held.close()
 
     def test_build_never_overwrites_a_folder_it_did_not_write(self):
         out = self.root / "mine"
