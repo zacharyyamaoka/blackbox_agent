@@ -1,0 +1,27 @@
+{
+  "schema": "bb-page/1",
+  "name": "Where it came from",
+  "page": "node",
+  "links": {
+    "page": "{page}.html",
+    "solution": "solution.html?id={id}"
+  },
+  "sections": {
+    "tabs": {
+      "type": "bb-nav",
+      "settings": {
+        "current": "spec"
+      }
+    },
+    "page": {
+      "type": "bb-links",
+      "settings": {
+        "view": "node"
+      }
+    }
+  },
+  "order": [
+    "tabs",
+    "page"
+  ]
+}

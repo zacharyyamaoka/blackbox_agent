@@ -73,6 +73,8 @@
 .bb-h { font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--bb-muted); margin: 0 0 10px; text-transform: uppercase; }
 .bb-empty { border: 1px dashed var(--bb-border); border-radius: calc(var(--bb-radius) + 4px); padding: 18px; color: var(--bb-muted); font-size: 14px; }
 .bb-empty b { color: var(--bb-fg); font-weight: 600; }
+.bb-empty .bb-fills { margin-top: 4px; }
+.bb-empty .bb-fills code { font-family: var(--bb-mono); font-size: .92em; }
 .bb-error { border: 1px solid var(--bb-bad); border-radius: calc(var(--bb-radius) + 4px); padding: 12px 14px; font-size: 13px; color: var(--bb-fg);
   background: color-mix(in srgb, var(--bb-bad) 8%, var(--bb-bg)); }
 .bb-error pre { white-space: pre-wrap; font: 12px/1.5 var(--bb-mono); margin: 6px 0 0; }
@@ -83,6 +85,12 @@
 bb-headliner .bbh { background: var(--bb-card); border: 1px solid var(--bb-border); border-radius: 16px; padding: 18px 18px 12px; position: relative; min-width: 0; }
 bb-headliner .bbh-box { font-size: 13px; color: var(--bb-muted); margin-bottom: 2px; overflow-wrap: anywhere; }
 bb-headliner .bbh-box b { color: var(--bb-fg); font-weight: 600; }
+bb-headliner a.bbh-obj { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+bb-headliner a.bbh-obj:hover { color: var(--bb-accent); }
+bb-headliner .bbh-ph { display: block; margin-top: 10px; overflow: visible; }
+bb-headliner .bbh-ph-axis { stroke: var(--bb-border); stroke-width: 1; }
+bb-headliner .bbh-ph-target { stroke: var(--bb-muted); stroke-width: 1; stroke-dasharray: 5 4; }
+bb-headliner .bbh-ph-label { fill: var(--bb-muted); font-size: 11px; font-family: var(--bb-font); }
 bb-headliner .bbh-headline { min-height: 50px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 bb-headliner .bbh-headline .value { font-size: 40px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
 bb-headliner .bbh-headline .unit { font-size: 18px; color: var(--bb-muted); margin-left: -4px; }

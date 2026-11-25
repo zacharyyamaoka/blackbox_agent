@@ -52,7 +52,11 @@ JUNIT_DIR = "site/data/junit"  # one junit per commit (<sha7>.xml[.gz]) for the 
 EXPORT_SLICES = ("playback",)  # viewer CONTRACT §4: the one slice a box's own export writes into state.json
 # a junit is published under the site: pytest writes the machine's hostname, and tracebacks with home paths, into it
 JUNIT_LEAK = re.compile(r"hostname=|/h[o]me/")
-PAGES_LINE = re.compile(r"https://([A-Za-z0-9-]+)\.github\.io/([A-Za-z0-9_.-]+)/")
+# the README's live-page line: https://<owner>.github.io/<repo>/ (GitHub Pages; groups 1, 2 name the box), or, for a box
+# hosted on Cloudflare, "Live landing page](https://<host>/)" (no groups: the box's name comes from its remote).
+# WHY the label anchors the second form: the same line links github.com/…/blackbox_agent, which is no live page.
+PAGES_LINE = re.compile(r"https://([A-Za-z0-9-]+)\.github\.io/([A-Za-z0-9_.-]+)/"
+                        r"|Live landing page\]\(https://[a-z0-9-]+(?:\.[a-z0-9-]+)+/\)")
 IMPORTMAP = re.compile(r'(<script\b[^>]*\btype=["\']importmap["\'][^>]*>)(.*?)(</script>)', re.S | re.I)
 
 
@@ -170,8 +174,13 @@ def fold(box: Path, sha: str, cwd: Path, junit: str | None, junit_dir: str | Non
     return state
 
 
-def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
-    """Write the box's site at `ref` into `out` (replacing an earlier build there); returns blackbox-build.json."""
+def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
+    """Write the box's site at `ref` into `out` (replacing an earlier build there); returns blackbox-build.json.
+
+    Public by default: a box's private sources (sources.py) are their labels and quotes only, and on a machine with a
+    roots file the build refuses to write a site that carries anything private (the leak gate). `local=True` (what
+    `blackbox serve` builds) resolves each private source through this machine's ledger and stages it beside the page,
+    so every citation opens at its words; such a site is never published."""
     box, out = Path(box).expanduser().resolve(), Path(out).expanduser().resolve()
     if not box.is_dir():
         raise BoxError(f"{box}: no such folder")
@@ -183,7 +192,8 @@ def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
     who = identity(box, sha)
     record = {"schema": "blackbox-build/1", "package": f"blackbox-agent {__version__}", "box": who["name"],
               "repo": f"{who['owner']}/{who['repo']}" if who["owner"] else who["repo"], "ref": sha,
-              "landing": None, "nav": None, "overrides": [], "dropped": [], "junit": None, "kept": [], "carried": []}
+              "landing": None, "nav": None, "overrides": [], "dropped": [], "junit": None, "kept": [], "carried": [],
+              "links": None}
     with tempfile.TemporaryDirectory(prefix="blackbox-build-") as tmp:
         root = Path(tmp)
         site = root / "site"
@@ -228,6 +238,20 @@ def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
         state.update({k: v for k, v in carry.items() if k not in state})
         record["kept"] = sorted(carry)
         (site / "data").mkdir(parents=True, exist_ok=True)
+        from blackbox_agent import sources
+
+        here = sources.machine()
+        links = state.get("links")
+        if links is not None:
+            n_private = len(sources.private_keys(links))
+            if local and here is not None:
+                res = sources.resolve(links, who["repo"], here)
+                state["links"] = sources.stage(site, links, res)
+                record["links"] = {"mode": "local", "sources": len(links.get("sources") or []), "private": n_private,
+                                   "located": n_private - res.broken, "broken": res.broken}
+            else:
+                record["links"] = {"mode": "public", "sources": len(links.get("sources") or []), "private": n_private,
+                                   "located": None, "broken": None}
         (site / "data" / "state.json").write_text(json.dumps(state, indent=1, ensure_ascii=False) + "\n")
 
         values = {"name": who["name"], "owner": who["owner"], "repo": who["repo"]}
@@ -260,6 +284,17 @@ def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
             _count_overrides(site, record["overrides"])
         (site / ".nojekyll").write_text("")
         (site / RECORD).write_text(json.dumps(record, indent=1) + "\n")
+        if here is not None and not (record["links"] or {}).get("mode") == "local":
+            # the leak gate: nothing this machine knows privately may be in a public build (WHY refuse, not scrub: a
+            # scrubbed page would read as complete; the fix belongs in the box's files, which check names)
+            # allowed: the box's own words, and the package's (its landing, nav and fold write English of their own,
+            # which may share a run of words with a note: the stock landing did, on blackbox_agent_agent)
+            side = sources.private_side(links, who["repo"], lambda: sources.box_text(box, sha) + "\n"
+                                        + sources.package_text(TEMPLATE, FOLD.parent), here)
+            hits = [h for h in sources.leak_scan(site, side) if "a private name" in h or "private text" in h]
+            if hits:
+                raise BoxError(f"refusing to write a public build: {len(hits)} private item(s) would leave this machine "
+                               f"({'; '.join(hits[:5])}); `blackbox check` names the box's lines (private-ref)")
         if out.exists():
             shutil.rmtree(out)
         out.parent.mkdir(parents=True, exist_ok=True)

@@ -5,23 +5,32 @@
 
 export const HEADER = ['schema', 'box', 'ref', 'read_at', 'ref_date', 'about', 'objective'];
 export const SLICES = ['kpis', 'iterations', 'ablations', 'unscored', 'spec', 'needs', 'gates', 'ideas', 'costs', 'feedback', 'audits',
-  'agents', 'activity', 'reports', 'report_files', 'references', 'playback', 'source', 'ablation_study', 'spec_history', 'analysis', 'notes', 'tabs'];
+  'agents', 'activity', 'reports', 'report_files', 'references', 'playback', 'source', 'ablation_study', 'spec_history', 'analysis', 'notes', 'tabs', 'links',
+  'goals'];
 /** Row slices bb-data-page can show (arrays, or arrays nested one level down). */
 export const ROW_SLICES = ['iterations', 'ablations', 'unscored', 'needs', 'gates', 'ideas', 'feedback', 'audits', 'report_files',
   'references', 'kpis', 'agents.proposers', 'activity.recent', 'costs', 'spec.requirements', 'ablation_study.variants', 'ablation_study.rows',
   'analysis', 'notes.rows'];
 // CONTRACT §16.2: the Ablation tab after Iterations (Zach treats the ablation study as its own tab).
 // CONTRACT §17 (Zach, 2026-11-24): Reports is Analysis; References and Notes are tabs; a box's own tabs follow these.
+// CONTRACT §20 (Zach, 2026-11-25): Goals after Notes, listed only when the box has goals/ (OPTIONAL_PAGES).
 export const PAGES = ['overview', 'spec', 'feedback', 'iterations', 'ablation', 'agents', 'activity', 'audits', 'analysis', 'ideas',
-  'references', 'notes'];
+  'references', 'notes', 'goals'];
 export const PAGE_LABELS = { overview: 'Overview', spec: 'Spec', feedback: 'Feedback', iterations: 'Iterations', ablation: 'Ablation',
-  agents: 'Agents', activity: 'Activity', audits: 'Audits', analysis: 'Analysis', ideas: 'Ideas', references: 'References', notes: 'Notes' };
+  agents: 'Agents', activity: 'Activity', audits: 'Audits', analysis: 'Analysis', ideas: 'Ideas', references: 'References', notes: 'Notes',
+  goals: 'Goals' };
+/** Tabs a box shows only when its state holds what they draw (CONTRACT §20): page id -> does this state have it.
+    WHY: a Goals tab over a box with no goals/ would be an empty tab that lies; every other tab has an honest empty state. */
+export const OPTIONAL_PAGES = { goals: (state) => !!(state && state.goals && Array.isArray(state.goals.goals)) };
+/** The built-in tabs this state shows, in order. */
+export const pagesFor = (state) => PAGES.filter((p) => !OPTIONAL_PAGES[p] || OPTIONAL_PAGES[p](state));
 /** Old page ids a page.json may still name (CONTRACT §17): `reports` is the Analysis tab. */
 export const PAGE_ALIASES = { reports: 'analysis' };
 /** A page id as the tabs know it (an alias read as its tab). */
 export const pageId = (id) => PAGE_ALIASES[id] || id;
 /** Page ids a box's own tab may not take: the built-in tabs, their aliases, and the site's own pages. */
-export const RESERVED_PAGES = [...PAGES, ...Object.keys(PAGE_ALIASES), 'solution', 'tab'];
+// 'objective' and 'node' (the linking round): the objective's page and a note's or source's page, under the Spec tab
+export const RESERVED_PAGES = [...PAGES, ...Object.keys(PAGE_ALIASES), 'solution', 'tab', 'objective', 'node'];
 
 const freeze = (o) => {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {

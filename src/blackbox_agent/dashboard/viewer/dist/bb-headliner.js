@@ -4331,9 +4331,11 @@ var SLICES = [
   "playback",
   "source",
   "ablation_study",
+  "spec_history",
   "analysis",
   "notes",
-  "tabs"
+  "tabs",
+  "links"
 ];
 var ROW_SLICES = [
   "iterations",
@@ -4371,7 +4373,7 @@ var PAGES = [
   "notes"
 ];
 var PAGE_ALIASES = { reports: "analysis" };
-var RESERVED_PAGES = [...PAGES, ...Object.keys(PAGE_ALIASES), "solution", "tab"];
+var RESERVED_PAGES = [...PAGES, ...Object.keys(PAGE_ALIASES), "solution", "tab", "objective", "node"];
 var freeze = (o) => {
   if (o && typeof o === "object" && !Object.isFrozen(o)) {
     Object.freeze(o);
@@ -4398,6 +4400,7 @@ function pick(state, reads = []) {
   }
   return freeze(out);
 }
+var splitOf = (objective) => objective && Object.prototype.hasOwnProperty.call(objective, "split") ? objective.split ?? null : "dev";
 
 // src/core/settings.js
 var SETTING_TYPES = ["checkbox", "number", "range", "select", "radio", "text", "textarea", "url", "html", "markdown"];
@@ -4486,6 +4489,7 @@ function distance(a, b) {
 // src/core/context.js
 var DEFAULT_LINKS = { page: "{page}.html", solution: "solution.html?id={id}" };
 var ASSET = /^(?!\/)(?![a-z]+:)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*(?:^|\/)solutions\/)[^?#]+\.(base|html|md|svg|png|jpg|jpeg|webp|gif|json)$/i;
+var NAV = /^(?![a-z][a-z0-9+.-]*:)(?!\/)(?!.*(?:^|\/)solutions\/)(?:\.\.\/|\.\/)*(?:[\w.-]+\/)*nav\.json$/i;
 function fill(pattern, vars) {
   return String(pattern || "").replace(/\{(\w+)\}/g, (_2, k) => encodeURIComponent(vars[k] ?? ""));
 }
@@ -4515,6 +4519,15 @@ function makeContext({ state = null, stateUrl = null, pageUrl = null, page = "ov
       const res = await fetch(new URL(path, base));
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
       return res.text();
+    },
+    /** The site's bar file (bb-site-nav/1, CONTRACT §18): a relative path to a file named nav.json, its schema checked. */
+    async nav(path) {
+      if (!NAV.test(String(path))) throw new Error(`refused: ${path} is not the site's nav.json (a relative path to a file named nav.json)`);
+      const res = await fetch(new URL(path, base));
+      if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+      const doc2 = await res.json();
+      if (!doc2 || doc2.schema !== "bb-site-nav/1") throw new Error(`${path}: schema is ${doc2 && doc2.schema}, not bb-site-nav/1`);
+      return doc2;
     },
     /** Fire bb-open from `el`; follow href unless a listener prevented it. */
     open(el, detail) {
@@ -4590,6 +4603,8 @@ var TOKENS_CSS = `
 .bb-h { font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--bb-muted); margin: 0 0 10px; text-transform: uppercase; }
 .bb-empty { border: 1px dashed var(--bb-border); border-radius: calc(var(--bb-radius) + 4px); padding: 18px; color: var(--bb-muted); font-size: 14px; }
 .bb-empty b { color: var(--bb-fg); font-weight: 600; }
+.bb-empty .bb-fills { margin-top: 4px; }
+.bb-empty .bb-fills code { font-family: var(--bb-mono); font-size: .92em; }
 .bb-error { border: 1px solid var(--bb-bad); border-radius: calc(var(--bb-radius) + 4px); padding: 12px 14px; font-size: 13px; color: var(--bb-fg);
   background: color-mix(in srgb, var(--bb-bad) 8%, var(--bb-bg)); }
 .bb-error pre { white-space: pre-wrap; font: 12px/1.5 var(--bb-mono); margin: 6px 0 0; }
@@ -4731,9 +4746,21 @@ var BBElement = class extends HTMLElement {
   }
   render() {
   }
-  /** The standard empty state: the schema's sentence (or a specific one), never a blank box. */
+  /** The standard empty state, never a blank box: what will appear here (bold), then what fills it (.bb-fills: the box
+      file or command). The schema's `empty` holds both as sentences, "What appears. What fills it."; with no `hint`,
+      its first sentence is the what and the rest the fills (bb-data-page's rule for a page's `empty` setting). `hint`
+      is trusted HTML (a component's own markup); the text is escaped. WHY both parts (Zach, 2026-11-24: "even if the
+      data is not there then I think it should like render empty.... at least"): a bare "No rows yet" leaves a new box's
+      reader with nothing to do. */
   empty(text = this.schema.empty, hint = "") {
-    this.innerHTML = `<div class="bb-empty" data-empty="${this.localName}"><b>${esc(text)}</b>${hint ? `<div style="margin-top:4px">${hint}</div>` : ""}</div>`;
+    let what = String(text ?? ""), fills = "";
+    const cut = what.indexOf(". ");
+    if (cut > 0) {
+      fills = esc(what.slice(cut + 2));
+      what = what.slice(0, cut + 1);
+    }
+    if (hint) fills = fills ? `${fills} ${hint}` : hint;
+    this.innerHTML = `<div class="bb-empty" data-empty="${this.localName}"><b>${esc(what)}</b>${fills ? `<div class="bb-fills">${fills}</div>` : ""}</div>`;
   }
   fail(error) {
     this.innerHTML = `<div class="bb-error"><b>${esc(this.schema?.name || this.localName)} could not render.</b><pre>${esc(String(error?.message || error))}</pre></div>`;
@@ -5003,7 +5030,9 @@ var bb_headliner_schema_default = {
   version: 1,
   wave: 1,
   description: "One big number (the best admissible objective in the window) and the best-so-far curve: admissible only on the line, red rings for gate failures, log or linear, x = iteration, date or commit, range chips, click a dot to open the solution.",
-  reads: ["iterations", "ablations"],
+  // `gates` (lane ES): how many gates a not-admissible solution fails OF, in the none-admissible-yet note
+  // `links` (the linking round): the objective's name links to its page when the box names one
+  reads: ["iterations", "ablations", "gates", "links"],
   settings: [
     {
       id: "x",
@@ -5035,7 +5064,7 @@ var bb_headliner_schema_default = {
   limit: 2,
   presets: [{ name: "Ticker" }],
   events: ["bb-open"],
-  empty: "No solution scored yet: the line starts at the first admissible solution."
+  empty: "No solution scored yet. Its empty state names the objective as the box declares it (name, unit, direction, target, ruler); every scored solution will be a dot, the best admissible so far a line."
 };
 
 // src/components/bb-headliner.css.js
@@ -5043,6 +5072,12 @@ var bb_headliner_css_default = `
 bb-headliner .bbh { background: var(--bb-card); border: 1px solid var(--bb-border); border-radius: 16px; padding: 18px 18px 12px; position: relative; min-width: 0; }
 bb-headliner .bbh-box { font-size: 13px; color: var(--bb-muted); margin-bottom: 2px; overflow-wrap: anywhere; }
 bb-headliner .bbh-box b { color: var(--bb-fg); font-weight: 600; }
+bb-headliner a.bbh-obj { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+bb-headliner a.bbh-obj:hover { color: var(--bb-accent); }
+bb-headliner .bbh-ph { display: block; margin-top: 10px; overflow: visible; }
+bb-headliner .bbh-ph-axis { stroke: var(--bb-border); stroke-width: 1; }
+bb-headliner .bbh-ph-target { stroke: var(--bb-muted); stroke-width: 1; stroke-dasharray: 5 4; }
+bb-headliner .bbh-ph-label { fill: var(--bb-muted); font-size: 11px; font-family: var(--bb-font); }
 bb-headliner .bbh-headline { min-height: 50px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 bb-headliner .bbh-headline .value { font-size: 40px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
 bb-headliner .bbh-headline .unit { font-size: 18px; color: var(--bb-muted); margin-left: -4px; }
@@ -5103,6 +5138,7 @@ var dtf = new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", hou
 var fmtDate2 = (t) => t ? dtf.format(new Date(t)) : "\u2014";
 var sha7 = (c) => c && c.sha && c.sha !== "none" ? String(c.sha).slice(0, 7) : "\u2014";
 var sign2 = (v) => v > 0 ? "+" : v < 0 ? "\u2212" : "\xB1";
+var targetText = (o) => Number.isFinite(o?.target) ? `target ${o.direction === "higher" ? "\u2265" : "\u2264"} ${fmt2(o.target)}${o.unit ? ` ${o.unit}` : ""}` : "";
 function ablationFacts(s) {
   const text = s.change || "";
   const m = /^\s*([−+-])\s*([^:(]+?)\s*:/.exec(text);
@@ -5154,11 +5190,12 @@ var BBHeadliner = class extends BBElement {
       this.u.destroy();
       this.u = null;
     }
-    if (!this.model.search.some((q2) => q2.y !== null)) return this.empty();
+    if (!this.model.search.some((q2) => q2.y !== null)) return this.nothingToPlot();
     const d = this.data;
     const o = d.objective || {};
     const nAbl = this.model.ablations.length;
-    const box = s.title ? esc(s.title) : `<b>${esc(d.box || "")}</b> \xB7 ${esc(o.name || "objective")} (dev${o.unit ? `, ${esc(o.unit)}` : ""}, ${o.direction === "higher" ? "higher" : "lower"} is better)${o.ruler ? ` \xB7 ruler ${esc(o.ruler)}` : ""}`;
+    const split = splitOf(o);
+    const box = s.title ? esc(s.title) : `<b>${esc(d.box || "")}</b> \xB7 ${this.objectiveName(o.name || "objective")} (${[split, o.unit].filter(Boolean).map(esc).join(", ")}${split || o.unit ? ", " : ""}${o.direction === "higher" ? "higher" : "lower"} is better${targetText(o) ? `, ${esc(targetText(o))}` : ""})${o.ruler ? ` \xB7 ruler ${esc(o.ruler)}` : ""}`;
     this.innerHTML = `<div class="bbh">
       <div class="bbh-box">${box}</div>
       <div class="bbh-headline" aria-live="polite"></div>
@@ -5176,6 +5213,41 @@ var BBHeadliner = class extends BBElement {
       this.draw();
     });
     this.draw();
+  }
+  /** The objective's name, a link to its page when the box has one (the links slice names it; the linking round:
+      "every objective should basically link to a more detailed page"). The page's URL is the context's `objective`
+      pattern (the dashboard: #objective; the landing: dashboard/#objective); with none, the plain name. */
+  objectiveName(name) {
+    const has = this.data.links && this.data.links.objective && this.data.links.objective.node;
+    const href = has ? this.context.href("objective") : "";
+    return href ? `<a class="bbh-obj" href="${esc(href)}" title="What it is, why, and how it is calculated">${esc(name)}</a>` : esc(name);
+  }
+  /** Nothing to plot yet: the objective as the box declares it (name, unit, direction, target, ruler), what is missing,
+      and what fills it. WHY (Zach, 2026-11-24): a new box's landing "should like render empty.... at least": the
+      reader sees what the line will measure before the first solution is scored. Never a number the box did not write. */
+  nothingToPlot() {
+    const d = this.data, o = d.objective || {};
+    const n = this.model.search.length;
+    const dir = o.direction === "higher" ? "higher" : "lower";
+    const unit = o.unit ? `${o.unit}` : "";
+    const target = targetText(o) || "no target declared";
+    const what = [unit && `in ${unit}`, `${dir} is better`, target].filter(Boolean).join(", ");
+    const missing = n ? `${n} solution${n === 1 ? "" : "s"} scored, none with a value yet` : "no scored solution yet";
+    const ruler = o.ruler ? ` \xB7 ruler ${esc(o.ruler)}${o.frozen ? `, frozen ${esc(o.frozen)}` : ""}` : "";
+    const h = Math.max(150, this.settings.height || 330);
+    const ty = Math.round(h * 0.3);
+    const tgt = Number.isFinite(o.target) ? `<line x1="44" x2="100%" y1="${ty}" y2="${ty}" class="bbh-ph-target"/><text x="50" y="${ty - 6}" class="bbh-ph-label">${esc(targetText(o))}</text>` : "";
+    this.innerHTML = `<div class="bb-empty bbh-empty" data-empty="bb-headliner">
+      <div class="bbh-box"><b>${esc(d.box || "")}</b>${ruler}</div>
+      <b><span class="bb-mono">${this.objectiveName(o.name || "The objective")}</span> (${esc(what)}): ${esc(missing)}.</b>
+      <div class="bb-fills">Every scored solution will be a dot here, and the best admissible one so far a line. Scoring a
+        solution adds its row to the box's ledger; the fold of the next commit plots it.</div>
+      <svg class="bbh-ph" width="100%" height="${h}" role="img" aria-label="${esc(`An empty chart: ${o.name || "the objective"} against solution number`)}">
+        <line x1="44" x2="44" y1="8" y2="${h - 28}" class="bbh-ph-axis"/><line x1="44" x2="100%" y1="${h - 28}" y2="${h - 28}" class="bbh-ph-axis"/>
+        ${tgt}
+        <text x="50" y="20" class="bbh-ph-label">${esc(o.name || "objective")}${unit ? ` (${esc(unit)})` : ""} ${dir === "lower" ? "\u2193" : "\u2191"} better</text>
+        <text x="100%" dx="-4" y="${h - 10}" text-anchor="end" class="bbh-ph-label">Solution # \u2192</text>
+      </svg></div>`;
   }
   yIsLog() {
     const v = this.v;
@@ -5244,6 +5316,15 @@ var BBHeadliner = class extends BBElement {
       return;
     }
     const label = this.zoom ? "in the zoomed range" : this.ui.r === "All" ? "since the first admissible" : `in ${this.ui.r}`;
+    if (!m.best) {
+      el.innerHTML = `<span class="value">\u2014</span><span class="why">none admissible yet</span>`;
+      sub.innerHTML = this.noneAdmissible();
+      sub.querySelector("[data-open]")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.open(e.currentTarget.dataset.open);
+      });
+      return;
+    }
     el.innerHTML = html(v.endBest, v.change, label);
     const b = v.bestSol;
     const hold = b && b.hold !== null ? ` \xB7 holdout ${fmtU(b.hold)}` : "";
@@ -5252,6 +5333,18 @@ var BBHeadliner = class extends BBElement {
       e.preventDefault();
       this.open(b.id);
     });
+  }
+  /** No admissible solution in the whole search: how many are scored and what the newest fails, from its own row
+      ("none admissible yet: 2 scored; s0 fails 5 of 10 gates: ci_green, …"). WHY (Zach, 2026-11-24, robot_sdk_agent's
+      page: "no hero image of the things showing"): the chart still draws every scored solution as a red ring. */
+  noneAdmissible() {
+    const search = this.model.search;
+    const last = search.slice().sort((a, b) => a.n - b.n).at(-1);
+    if (!last) return "";
+    const failed = Object.keys(last.failed || {});
+    const of = Array.isArray(this.data.gates) && this.data.gates.length ? ` of ${this.data.gates.length}` : "";
+    const names = failed.length ? `: ${failed.slice(0, 5).map(esc).join(", ")}${failed.length > 5 ? ` +${failed.length - 5}` : ""}` : "";
+    return `${search.length} solution${search.length === 1 ? "" : "s"} scored, none passes every gate yet \xB7 <a href="${esc(this.context.href("solution", { id: last.id }))}" class="who" data-open="${esc(last.id)}">${esc(last.id)}</a> (#${last.n}, the newest) fails ${failed.length}${of} gate${failed.length === 1 && !of ? "" : "s"}${names}`;
   }
   /** bb-open {kind: 'solution', id}; the context follows links.solution unless a listener prevented it. */
   open(id) {

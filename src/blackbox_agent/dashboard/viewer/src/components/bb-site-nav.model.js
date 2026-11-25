@@ -16,14 +16,14 @@
    grouped menu) is the default, a nav.json that names no layout included; "two-rows" (01, the dashboards spread out as
    tabs) stays a setting. The row below is the same in both. */
 
-import { PAGES, PAGE_LABELS } from '../core/slices.js';
+import { PAGE_LABELS, pagesFor } from '../core/slices.js';
 
 export const SCHEMA = 'bb-site-nav/1';
 /** The top row's two looks; the first is the default (a nav.json without `layout`). */
 export const LAYOUTS = ['switcher', 'two-rows'];
 /** The fold order of the viewer's tabs (lane NAV's nav.json, measured at 1280 / 1024 / 390): 1 folds last. */
 export const BOX_PRIORITY = { overview: 1, spec: 2, feedback: 2, iterations: 2, ablation: 3, analysis: 3, ideas: 3,
-  agents: 4, activity: 4, audits: 4, references: 4, notes: 4 };
+  agents: 4, activity: 4, audits: 4, references: 4, notes: 4, goals: 3 };
 export const OWN_TAB_PRIORITY = 4;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
 // a path inside the site, relative to nav.json: no scheme, no leading /, no .. (nav.json sits at the site's root)
@@ -97,8 +97,10 @@ export function pagePath(url) {
 }
 
 /** The model: the dashboards in order, each with its row-2 tabs, every href absolute (resolved against nav.json's URL).
-    `own` = the box's own tabs ({slug, label}, CONTRACT §17.3) for the viewer dashboard. */
-export function makeModel(doc, navUrl, { own = [] } = {}) {
+    `own` = the box's own tabs ({slug, label}, CONTRACT §17.3) for the viewer dashboard; `pages` = the built-in tabs this
+    box shows (src/core/slices.js pagesFor(state); with no state loaded, a drop-in page, the tabs every box shows:
+    Goals only where the state says the box has goals/, CONTRACT §20). */
+export function makeModel(doc, navUrl, { own = [], pages = pagesFor(null) } = {}) {
   const problems = validate(doc);
   if (problems.length) throw new Error(`nav.json: ${problems.join('; ')}`);
   const at = (p) => new URL(p, navUrl).href;
@@ -112,7 +114,7 @@ export function makeModel(doc, navUrl, { own = [] } = {}) {
     if (d.tabs !== undefined) {
       dash.kind = 'viewer';
       const listed = Array.isArray(d.tabs) ? d.tabs.map((t) => ({ id: t.id, label: t.label || PAGE_LABELS[t.id] || t.id, short: t.short, priority: t.priority }))
-        : PAGES.map((p) => ({ id: p, label: PAGE_LABELS[p] }));
+        : pages.map((p) => ({ id: p, label: PAGE_LABELS[p] }));
       const tabs = listed.concat(own.filter((t) => !listed.some((x) => x.id === t.slug)).map((t) => ({ id: t.slug, label: t.label, own: true })));
       dash.tabs = tabs.map((t, i) => ({ id: t.id, label: t.label, short: t.short || t.label, own: !!t.own, index: i,
         priority: t.priority ?? (t.own ? OWN_TAB_PRIORITY : BOX_PRIORITY[t.id] ?? 2), href: `${dash.href}#${t.id}` }));

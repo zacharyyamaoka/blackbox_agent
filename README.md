@@ -42,9 +42,10 @@ the fix (the first 20 of each; `--all` for every one), and `missing-path` for a 
 (`README.md`, `OBJECTIVES.md`, `AGENTS.md`, `PROGRESS.md`, `ledger.jsonl`, `ideas.md`, `REFERENCES.md`, `status.json`,
 `solutions/`). A file the box pins by sha256 (its frozen ruler) is not linted until its next pin.
 
-## Deploy: six lines in the box
+## Deploy: seven lines in the box
 
-`.github/workflows/pages.yml` (`blackbox new` writes it), with the box's Pages source set to "GitHub Actions":
+`.github/workflows/pages.yml` (`blackbox new` writes it). It is the same for every box; a box on GitHub Pages sets its
+Pages source to "GitHub Actions", and the `secrets:` line matters only for a box hosted on Cloudflare:
 
 ```yaml
 name: pages
@@ -53,17 +54,25 @@ permissions: {contents: read, pages: write, id-token: write}
 jobs:
   site:
     uses: zacharyyamaoka/blackbox_agent/.github/workflows/site.yml@v0
+    secrets: {CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}", CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"}
 ```
 
 The workflow checks out the box with its full history, runs
 `uvx --from git+https://github.com/zacharyyamaoka/blackbox_agent@v0 blackbox build --box . --out _site` and deploys
-`_site` in a second job. **Pin it** by naming an exact version: `site.yml@v0.1.0` with `with: {ref: v0.1.0}`. `v0`
+`_site` where the README says (below). **Pin it** by naming an exact version: `site.yml@v0.1.0` with `with: {ref: v0.1.0}`. `v0`
 moves to every `0.x` release. A box tool the fold runs that needs a package lists exactly that in
 `.github/fold-requirements.txt`.
 
-**A private box** builds its site on every push too (CI proves it builds), but skips the Pages steps, since Pages on
-a private repo needs a paid plan. With a plan that allows it, add `with: {pages: always}`; `pages: never` skips Pages
-on a public box.
+**Where the page goes is the README's live-page line.** `https://<owner>.github.io/<repo>/` deploys to GitHub Pages
+(a public box). Any other host, `[▶ Live landing page](https://<host>/)`, deploys to Cloudflare: a static-assets Worker
+on that host, with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets that the `secrets:` line passes, and
+only behind a Cloudflare Access sign-in. The deploy refuses a host that no self-hosted Access app covers, and takes the
+Worker down again if the page answers without a sign-in. The token needs Workers Scripts and Workers Routes (edit) and
+Access: Apps and Policies (read). The build is the same for both hosts.
+
+**A private box whose README still links github.io** builds its site on every push (CI proves it builds) but skips
+the Pages steps, since Pages on a private repo needs a paid plan. With a plan that allows it, add
+`with: {pages: always}`; `pages: never` deploys nothing.
 
 ## Change one piece: an override
 
@@ -87,12 +96,38 @@ the package, so every box gets it.
 the site's root, so its links are written as from `site/`) and is counted with the components. A plain
 `site/index.html` is not used: `blackbox check` says to move it to `site/overrides/index.html` or delete it.
 
+## Where the words came from: SOURCES.md, private sources, the objective's page
+
+A note cites with a bare number, `[1](../SOURCES.md#z1)` (the path from the note to the box's root). `SOURCES.md` keeps
+one `## <key>` per source: `- label:`, `- whose:` (`his words`, `an AI's record`, `public page`), `- quote:` (the words
+the box publishes) and, for a public page, `- url:`. A spec whose front matter says `objective: <name>` is the
+objective's page. The dashboard then shows, on the Spec tab, how many specs trace to the author's own words and which
+trace to nothing; the objective's name links to its page, the spec as a document with each citation's words in the
+margin; every spec, feedback note and source has a page with Came from and Linked mentions.
+
+Where a private key points never enters the box. It lives in a ledger note named `<box> sources` in the author's notes
+folder, one `## <key>` per source, each an Obsidian block link to the exact words (`- source:: [[Note#^bb-3f2a1c]]`,
+`- quote:: …`), and one roots file per machine names that folder, so a moved folder is one line:
+
+```toml
+# $HOME/.config/blackbox/roots.toml  (BLACKBOX_ROOTS names another)
+vault = "<your notes folder>"
+```
+
+`blackbox serve` resolves every private key on that machine and opens each citation in source-highlighter at its words
+(`--public` serves what Pages shows instead). `blackbox build` is the public build: a private source is its label and
+quote, and on a machine with a roots file the build refuses to write anything private (the notes folder, a note's name
+or path, a block id, a run of six words from a cited note the box does not say itself). `blackbox check` reports a box
+file that names a private place (`private-ref`), a citation of a key SOURCES.md does not list (`unknown-key`) and a
+private key that does not resolve here (`source-unresolved`).
+
 ## The site a build writes
 
 ```text
 index.html             the landing: the goal, the progress, "Open the dashboard →" (or the box's site/overrides/index.html)
 nav.json               the site bar on every page (bb-site-nav/1): the box's site/nav.json, or the Black box only
 data/state.json        the fold of the commit (bb-state/1); the box export's `playback` slice is kept
+data/local/sources/    blackbox serve only: the private notes a box cites, staged for source-highlighter (never public)
 data/files/<path>      each picture the box's docs show from outside site/ (a note's pictures draw from here and site/)
 dashboard/             the dashboard: the viewer's components, the stock parts they load, the tab templates
 overrides/<tag>.js     the box's own components, wired in by an import map (the dashboard counts them, and the landing)

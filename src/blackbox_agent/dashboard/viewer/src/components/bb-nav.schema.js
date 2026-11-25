@@ -5,9 +5,9 @@ import { PAGES, PAGE_LABELS, PAGE_ALIASES } from '../core/slices.js';
 
 export default {
   tag: 'bb-nav', name: 'Tabs', version: 1, wave: 1,
-  description: "The box's tabs (Overview, Spec, Feedback, Iterations, Ablation, Agents, Activity, Audits, Analysis, Ideas, References, Notes, then the box's own from site/tabs/) with each tab's count read from state.json, the Needs-you pill, a GitHub button to the box's repo and a settings gear (Appearance: Light / Dark / System).",
+  description: "The box's tabs (Overview, Spec, Feedback, Iterations, Ablation, Agents, Activity, Audits, Analysis, Ideas, References, Notes, Goals when the box has goals/, then the box's own from site/tabs/) with each tab's count read from state.json, the Needs-you pill, a GitHub button to the box's repo and a settings gear (Appearance: Light / Dark / System).",
   reads: ['spec', 'feedback', 'iterations', 'ablations', 'unscored', 'agents', 'activity', 'audits', 'reports', 'analysis', 'needs', 'ideas',
-    'references', 'notes', 'tabs'],
+    'references', 'notes', 'tabs', 'goals'],
   settings: [
     { id: 'current', type: 'select', label: 'Current tab', default: 'overview',
       info: "a box's own tab is current when the page's `page` is its slug; `reports` is the old id of Analysis",

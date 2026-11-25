@@ -13,6 +13,13 @@
         "current": "feedback"
       }
     },
+    "sources": {
+      "type": "bb-links",
+      "settings": {
+        "view": "answer",
+        "about": "feedback"
+      }
+    },
     "rows": {
       "type": "bb-data-page",
       "settings": {
@@ -26,6 +33,7 @@
   },
   "order": [
     "tabs",
+    "sources",
     "rows"
   ]
 }

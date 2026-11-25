@@ -11,8 +11,9 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from blackbox_agent import sources
 from blackbox_agent.lint import lint
-from blackbox_agent.site import PAGES_LINE, PKG, STRAY_LANDING, TEMPLATE, BoxError, build, fill, git, need
+from blackbox_agent.site import PAGES_LINE, PKG, STRAY_LANDING, TEMPLATE, BoxError, build, fill, git, identity, need
 
 SCAFFOLD = PKG / "scaffold"
 # scaffold file -> its path in the box (WHY renamed: a packaged dot-file can be dropped by a build backend, and a nested
@@ -90,13 +91,28 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
     findings, lint_notes = lint(box, sha, tracked)
     problems += [str(f) for f in findings]
     notes += lint_notes
+    # private sources (sources.py): a box file that names a private place, read before the build (which refuses one)
+    here = sources.machine()
+    repo = identity(box, sha)["repo"]
+    side = sources.private_side(None, repo, m=here, text=False) if here is not None else sources.PrivateSide()
+    # WHY an obsidian: link in a box file is a note, not a problem: the format counts it as a link (a private root
+    # URI, lint.py), and boxes in the format carry them; only a place this machine knows is private is a problem
+    found = sources.ref_findings(box, sha, tracked, side)
+    uris = [f for f in found if f[2] == "an obsidian: link"]
+    if uris:
+        notes.append(f"{len(uris)} obsidian: link(s) in the box's files ({', '.join(sorted({p for p, _, _ in uris})[:5])}): "
+                     f"they name a notes folder on GitHub; a citation of SOURCES.md keeps that on this machine")
+    for path, n, what in (f for f in found if f[2] != "an obsidian: link"):
+        problems.append(f"[private-ref] {path}:{n}: names {what}; fix: cite it as [1](SOURCES.md#<key>) (the path from "
+                        f"this file) and keep where the key points in the box's ledger, on this machine")
     objectives_tracked = "OBJECTIVES.md" in tracked
     readme = text("README.md")
     if readme is not None:
         lines = [l for l in readme.splitlines() if l.strip()]
         if len(lines) < 2 or not lines[0].startswith("# ") or not PAGES_LINE.search(lines[1]):
             problems.append("README.md's first line under the title does not link the live page "
-                            "(https://<owner>.github.io/<repo>/); `blackbox new` writes it")
+                            "(https://<owner>.github.io/<repo>/, or [▶ Live landing page](https://<host>/) for a box "
+                            "hosted on Cloudflare); `blackbox new` writes it")
     for n, line in enumerate((text("ledger.jsonl") or "").splitlines(), start=1):
         if line.strip():
             try:
@@ -139,6 +155,24 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
         # (the objective line, its "(the objective)" marker, else the ranked scorecard's own); check and the page
         # must never disagree about it.
         state = json.loads((out / "data" / "state.json").read_text())
+        links = state.get("links")
+        if links:
+            for p in links.get("problems") or []:
+                if p.get("kind") == "unknown-key":
+                    problems.append(f"[unknown-key] {p['path']}:{p['line']}: {p['text']}; fix: add its `## <key>` to "
+                                    f"SOURCES.md, or cite a key it lists")
+            n_private = len(sources.private_keys(links))
+            if here is None:
+                notes.append(f"private sources not checked: no roots file on this machine ({sources.roots_path()}); "
+                             f"{n_private} of {len(links.get('sources') or [])} sources are private")
+            elif n_private:
+                res = sources.resolve(links, repo, here)
+                for k in res.keys.values():
+                    if k.status != "located":
+                        problems.append(f"[source-unresolved] SOURCES.md#{k.key}: {k.why}; fix: the key's source:: and "
+                                        f"quote:: in the ledger, or the block id in the note")
+                notes.append(f"{n_private - res.broken} of {n_private} private sources resolve on this machine "
+                             f"(the ledger: {res.ledger.name if res.ledger else 'none'})")
         if objectives_tracked and not ((state.get("objective") or {}).get("name")):
             problems.append("OBJECTIVES.md names no objective the fold can read: give it the line "
                             "**Objective (one number, lower is better): `<name>`**")

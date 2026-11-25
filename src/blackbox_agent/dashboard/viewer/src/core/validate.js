@@ -90,9 +90,10 @@ export function validatePage(page, catalogue) {
   if (page.page !== undefined && !(typeof page.page === 'string' && /^[a-z0-9-]+$/.test(page.page)))
     at('page', `${q(page.page)} is not a page id (${PAGES.join(', ')}, or a box's own [a-z0-9-]+)`);
   if (page.links !== undefined) {
-    if (!isObj(page.links)) at('links', 'links must be {page?, solution?}');
+    // objective, node: the linking round's pages (<bb-links>, CONTRACT §19), additive
+    if (!isObj(page.links)) at('links', 'links must be {page?, solution?, objective?, node?}');
     else for (const [k, v] of Object.entries(page.links)) {
-      if (!['page', 'solution'].includes(k)) at(`links.${k}`, `unknown link ${q(k)} (page, solution)`);
+      if (!['page', 'solution', 'objective', 'node'].includes(k)) at(`links.${k}`, `unknown link ${q(k)} (page, solution, objective, node)`);
       else if (typeof v !== 'string') at(`links.${k}`, 'a link pattern is text, e.g. "{page}.html"');
     }
   }

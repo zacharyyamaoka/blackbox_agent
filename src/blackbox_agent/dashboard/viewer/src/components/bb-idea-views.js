@@ -15,6 +15,7 @@
 import { BBElement, esc, fmtNum } from '../core/element.js';
 import { register } from '../core/registry.js';
 import { loadViews, loadKpi } from '../core/kit.js';
+import { fill } from '../core/context.js';
 import { md } from '../core/inline.js';
 import schema from './bb-idea-views.schema.js';
 import { splitOf } from '../core/slices.js';
@@ -735,7 +736,16 @@ export const PROPERTIES = {
   text: { type: 'text', label: 'The line', hidden: true },
   open: { type: 'boolean', label: 'Open', hidden: true },
   key: { type: 'text', label: 'Row id in state.json', hidden: true },
+  // CONTRACT §20 (the box has goals/): the idea's place on a goal's roadmap, from its - Goal: / - Effort: / - Expect: lines
+  goal: { type: 'list', label: 'Goal', width: 90, note: "the goals whose roadmap it is on ('- Goal: G2' under it in ideas.md); No goal = it serves none" },
+  step: { type: 'number', label: 'Step', width: 54, note: "its place in its goal's plan ('· step N' first, then the file's order)" },
+  plan: { type: 'text', label: 'Plan', width: 150 },
+  effort: { type: 'number', label: 'Effort', unitText: 'min', width: 70, note: "'- Effort:' box time, bottom up; Zach's ideas are never sized" },
+  goal_expect: { type: 'text', label: 'Its bet', width: 170, note: "'- Expect:' as written: what moves the goal's line" },
+  aims: { type: 'text', label: 'Aims at', width: 100, note: "the goal's criterion it names ('- Goal: G2 · O1.1')" },
 };
+/** No goal, as a value the facet and the groups can show (an idea serving no goal stays visible as such). */
+export const NO_GOAL = 'No goal';
 
 /** state.json ideas -> data-ui rows under 01's field names. A row folded without the Lens fields (the ideas fold not run)
     still draws: on no rung ("Unassigned", saying why), in the file's order, with no edge. */
@@ -745,6 +755,7 @@ export function viewRows(ideas) {
     const row = { ...r, key: r.id, id: String(lens ? r.iid : r.id), lane: r.whose || (r.lane === 'human' ? 'Zach' : 'Agent'),
       solutions: r.solutions_md ?? (r.solutions?.length ? r.solutions.join(', ') : { value: null, why: 'not tried yet' }),
       expect: r.expect_then ?? r.expect ?? null };
+    if (Array.isArray(r.goal)) row.goal = r.goal.length ? r.goal : [NO_GOAL];
     delete row.whose; delete row.solutions_md; delete row.expect_then; delete row.iid;
     if (!lens) {
       Object.assign(row, { rung: { value: 'Unassigned', note: 'unassigned: this state.json was folded without the Lens board fields' },
@@ -866,9 +877,11 @@ export function baseDoc(rows, s, { laneState = null, focus = null } = {}) {
   if (laneState) lanes.laneState = laneState;
   const lineage = { parents: 'built_on', label: 'id', kept: { board: ['Won', 'Up next'] }, extinct: 'show' };
   if (focus) lineage.focus = focus;
-  return {
-    defaultView: PRESET[s.preset] || 'Roadmap',
-    facets: ['rung', 'board', 'lane', 'horizon', 'rung_set'],
+  // CONTRACT §20: a box with goals/ gets the goal facet first and a Plan preset (its ideas by goal, in plan order)
+  const goals = rows.some((r) => Array.isArray(r.goal));
+  const doc = {
+    defaultView: goals && s.goal ? 'Plan' : PRESET[s.preset] || 'Roadmap',
+    facets: [...(goals ? ['goal'] : []), 'rung', 'board', 'lane', 'horizon', 'rung_set'],
     views: [
       { type: 'lanes', name: 'Roadmap', order: ['id', 'title', 'rung', 'horizon', 'needs', 'unlocks', 'outcome'], lanes, record: ZOOM },
       { type: 'table', name: 'Table', order: ['order', 'id', 'title', 'board', 'rung', 'horizon', 'needs', 'solution', 'bet'],
@@ -881,6 +894,14 @@ export function baseDoc(rows, s, { laneState = null, focus = null } = {}) {
         sort: BY_ORDER, markers: 'none', record: ZOOM },
     ],
   };
+  if (goals) {
+    const ids = [...new Set(rows.flatMap((r) => r.goal || []))].filter((g) => g !== NO_GOAL).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+    doc.views[1].order.splice(3, 0, 'goal');
+    doc.views.splice(1, 0, { type: 'table', name: 'Plan', order: ['step', 'id', 'title', 'goal', 'effort', 'goal_expect', 'aims', 'board', 'lane'],
+      groupBy: { property: 'goal' }, groupOrder: [...ids, NO_GOAL], sort: [{ property: 'step', direction: 'ASC' }, { property: 'order', direction: 'ASC' }],
+      rowHeight: 'medium', record: { sections: [{ name: 'On a roadmap', properties: ['plan', 'effort', 'goal_expect', 'aims'] }, ...ZOOM.sections] } });
+  }
+  return doc;
 }
 
 /* ── the component ─────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -893,7 +914,13 @@ bb-idea-views { --bbiv-h: 640px; }
 bb-idea-views .bbiv-fuel { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 0 0 12px; }
 bb-idea-views .bbiv-fuel data-kpi { min-width: 0; }
 bb-idea-views .bbiv-wait { color: var(--bb-muted); font-size: 13px; }
-bb-idea-views data-views { min-width: 0; --data-height: var(--bbiv-h); } /* WHY no display: data-views is data-ui's flex column; block spilled the table out of its frame */
+bb-idea-views data-views { min-width: 0; --data-height: var(--bbiv-h); }
+bb-idea-views .bbiv-goal { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; justify-content: space-between; margin: 0 0 10px; padding: 8px 12px;
+  border: 1px solid var(--bb-border); border-left: 3px solid #7c3aed; border-radius: var(--bb-radius); font-size: 13.5px; }
+bb-idea-views .bbiv-goal code { font-family: var(--bb-mono); font-size: 12px; }
+bb-idea-views .bbiv-goal-links { display: inline-flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
+bb-idea-views .bbiv-goal-links button { font: inherit; color: var(--bb-accent); background: none; border: 0; padding: 0; cursor: pointer; }
+bb-idea-views .bbiv-goal-links button:hover { text-decoration: underline; } /* WHY no display: data-views is data-ui's flex column; block spilled the table out of its frame */
 @media (max-width: 640px) { bb-idea-views { --bbiv-h: 560px; } }
 bb-idea-views .dv-view-lanes { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 bb-idea-views .dv-lanes-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 2px 8px; font-size: 12.5px; color: var(--dv-muted); }
@@ -1000,15 +1027,52 @@ bb-idea-views .dv-lanes-empty { position: absolute; font-size: 12px; color: var(
         k.card = c;
       }
     }
+    // CONTRACT §20: one goal's ideas (the Goals tab's "Its N ideas →", #ideas?goal=G2): the goal facet set on the stock
+    // rail (the reader can clear it there too), the Plan preset, and a line that names the goal and links back
+    const goal = goalFilter(s.goal, rows);
+    if (goal) wrap.append(this.goalBanner(goal, rows));
     // settled = the first view drew (the story runner and shoot wait on the "Loading" line going away)
-    views.addEventListener('data-views-render', (e) => { this.dataset.drew = e.detail.type; wait.remove(); }, { once: true });
+    views.addEventListener('data-views-render', (e) => {
+      if (goal) views.setFacet('goal', { values: [goal.value] });
+      this.dataset.drew = e.detail.type;
+      wait.remove();
+    }, { once: true });
     views.baseText = text;
     views.base = core.parseBase(text);
     // WHY the settings in the data id: data-ui keeps a reader's view changes per data id, so a page.json edit (a new
     // preset, lens or split) starts fresh instead of reopening yesterday's tweaks
-    views.data = { id: `bb/${box}/ideas/${s.preset}.${s.lens}.${s.cards}.${+s.split}.${+s.gate_state}`, title: `${box} ideas`,
+    views.data = { id: `bb/${box}/ideas/${s.preset}.${s.lens}.${s.cards}.${+s.split}.${+s.gate_state}${goal ? `.${goal.value}` : ''}`, title: `${box} ideas`,
       titleProperty: 'title', linkProperty: 'source', properties: PROPERTIES, rows };
     wrap.append(views);
   }
+
+  /** "G2 Ready for the real arm: its 4 ideas, in plan order · ← its two lines · Show all 32 ideas" (02's banner). */
+  goalBanner(goal, rows) {
+    const el = document.createElement('div');
+    el.className = 'bbiv-goal';
+    el.setAttribute('role', 'status');
+    const g = (this.data.goals?.goals || []).find((x) => x.id === goal.id);
+    const mine = rows.filter((r) => (r.goal || []).includes(goal.value));
+    const open = mine.filter((r) => !r.done);
+    const pattern = this.context.links.page || '{page}.html';
+    const back = goal.id === 'none' ? '' : `<a href="${esc(fill(pattern, { page: 'goals' }))}?goal=${esc(goal.id)}" data-goals="${esc(goal.id)}">← ${esc(goal.id)}'s two lines</a>`;
+    const what = goal.id === 'none'
+      ? `<b>${mine.length} ideas serve no goal</b>: ${open.length} still open. An idea joins a goal's roadmap with <code>- Goal: G2</code> under it in ideas.md.`
+      : `<b>${esc(goal.id)}${g ? ` ${esc(g.title)}` : ''}</b>: its ${mine.length} ideas, in plan order (step 1 → ${mine.length})${open.length < mine.length ? `, ${mine.length - open.length} crossed off` : ''}.`;
+    el.innerHTML = `<span>${what}</span><span class="bbiv-goal-links">${back}<button type="button" data-all>Show all ${rows.length} ideas</button></span>`;
+    el.querySelector('[data-all]').addEventListener('click', () => { this.settings = { ...this.settings, goal: '' }; });
+    el.querySelector('[data-goals]')?.addEventListener('click', (e) => {
+      const go = this.context.open(this, { kind: 'page', id: 'goals', query: { goal: goal.id }, href: e.currentTarget.getAttribute('href') });
+      if (!go || !this.context.follow) e.preventDefault();
+    });
+    return el;
+  }
+}
+
+/** The goal a `goal` setting names, as the facet value: a goal id the rows carry, or `none` (the ideas serving no goal). */
+export function goalFilter(goal, rows) {
+  if (!goal || !rows.some((r) => Array.isArray(r.goal))) return null;
+  if (goal === 'none') return { id: 'none', value: NO_GOAL };
+  return rows.some((r) => (r.goal || []).includes(goal)) ? { id: goal, value: goal } : null;
 }
 register(BBIdeaViews);

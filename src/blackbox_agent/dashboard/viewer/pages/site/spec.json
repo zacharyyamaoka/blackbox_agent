@@ -13,6 +13,13 @@
         "current": "spec"
       }
     },
+    "sources": {
+      "type": "bb-links",
+      "settings": {
+        "view": "answer",
+        "about": "spec"
+      }
+    },
     "spec": {
       "type": "bb-spec",
       "settings": {
@@ -22,6 +29,7 @@
   },
   "order": [
     "tabs",
+    "sources",
     "spec"
   ]
 }

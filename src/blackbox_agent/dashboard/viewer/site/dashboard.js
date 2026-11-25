@@ -3,14 +3,17 @@
    A box's site gets this file, the viewer it imports and the page that loads it (site/dashboard/index.html) from
    blackbox_agent's tools/vendor_viewer.py; never edit the copy, re-vendor it.
 
-   Routes are the hash: #<tab id> (a built-in tab or the box's own, CONTRACT §17.3) or #solution=<id> (shown under
-   Iterations). A tab is one link click, Back walks the tabs, a URL names a tab and survives a reload.
+   Routes are the hash: #<tab id> (a built-in tab or the box's own, CONTRACT §17.3), #solution=<id> (shown under
+   Iterations), #objective (the objective's page) or #node=<spec:id|feedback:id|source:key> (a note's or source's page,
+   under the Spec or Feedback tab; the linking round, <bb-links>). A tab may carry a query, #ideas?goal=G2 (CONTRACT §20:
+   each key set on the page's sections that declare that setting, src/core/route.js). A tab is one link click, Back walks the tabs, a URL names a tab and survives a reload.
 
    The page's <body> names the state, relative to the page (the default is a box's site/ layout), and the bar its nav.json:
      <body data-state="../data/state.json"> <bb-site-nav src="../nav.json" current="blackbox" href="#{page}">
    The template's own bb-nav section is left out: the site bar draws the tabs (with the same counts) for every page.
    window.__dash = {ready, page, errors} is what a headless check waits on. */
-import '../src/components/index.js';
+import { schemas } from '../src/components/index.js';
+import { splitRoute, routeOf, withQuery } from '../src/core/route.js';
 import { tabTemplate } from '../src/core/tabs.js';
 import { PAGES, pageId } from '../src/core/slices.js';
 
@@ -35,25 +38,30 @@ const builtIn = (page) => {
 function route() {
   const h = decodeURIComponent(location.hash.slice(1));
   if (h.startsWith('solution=')) return { page: 'solution', id: h.slice(9), tab: 'iterations' };
-  const page = /^[a-z0-9-]+$/.test(h) ? pageId(h) : 'overview';
-  return { page, id: '', tab: page };
+  // the linking round: the objective's page (Margin) and one page per spec, feedback note or source (Wiki)
+  if (h === 'objective') return { page: 'objective', id: '', tab: 'spec' };
+  if (h.startsWith('node=')) return { page: 'node', id: h.slice(5), tab: h.startsWith('node=feedback:') ? 'feedback' : 'spec' };
+  const { page: p, query } = splitRoute(h);
+  const page = /^[a-z0-9-]+$/.test(p) ? pageId(p) : 'overview';
+  return { page, id: '', tab: page, query };
 }
 
 /** The template a route shows: a built-in tab or the solution page (the viewer's file), the box's own tab (the state's
     tabs slice), else the viewer's "no tab by that name" page. A copy, without its bb-nav section. */
 async function templateFor(state, r) {
   let got = null;
-  if (PAGES.includes(r.page) || r.page === 'solution') got = await builtIn(r.page);
+  if (PAGES.includes(r.page) || ['solution', 'objective', 'node'].includes(r.page)) got = await builtIn(r.page);
   else {
     const own = tabTemplate(state, r.page);
     got = own ? { t: own, url: SITE } : await builtIn('tab');
   }
-  const t = JSON.parse(JSON.stringify(got.t));
+  const t = withQuery(JSON.parse(JSON.stringify(got.t)), r.query, schemas);
   for (const [id, s] of Object.entries(t.sections || {})) {
     if (s.type === 'bb-nav') { delete t.sections[id]; t.order = (t.order || []).filter((x) => x !== id); }
   }
   if (r.page === 'solution' && t.sections?.detail) t.sections.detail.settings = { ...(t.sections.detail.settings || {}), id: r.id };
-  t.links = { ...(t.links || {}), page: '#{page}', solution: '#solution={id}' };
+  if (r.page === 'node' && t.sections?.page) t.sections.page.settings = { ...(t.sections.page.settings || {}), id: r.id };
+  t.links = { ...(t.links || {}), page: '#{page}', solution: '#solution={id}', objective: '#objective', node: '#node={id}' };
   return { t, url: got.url };
 }
 
@@ -74,7 +82,7 @@ async function main() {
   const show = async () => {
     const r = route();
     if (bar) bar.setAttribute('page', r.tab);
-    const key = `${r.page}|${r.id}`;
+    const key = `${r.page}|${r.id}|${routeOf('', r.query)}`;
     if (key === shown) { if (wantNeeds) scrollNeeds(); return; }
     const first = shown === null;
     shown = key;
@@ -102,7 +110,7 @@ async function main() {
   document.addEventListener('bb-open', (e) => {
     const d = e.detail || {};
     e.preventDefault(); // every open is a route here: a hash change, so Back walks it
-    if (d.kind === 'page' && d.id) location.hash = pageId(d.id);
+    if (d.kind === 'page' && d.id) location.hash = routeOf(pageId(d.id), d.query);
     else if (d.kind === 'need') { wantNeeds = true; if (location.hash === '#overview' || !location.hash) show(); else location.hash = 'overview'; }
     else if (d.kind === 'solution' && d.id) location.hash = `solution=${encodeURIComponent(d.id)}`;
   });

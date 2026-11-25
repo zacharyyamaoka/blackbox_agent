@@ -8,7 +8,8 @@ to touch (`parse(text).render() == text`, pinned by test_ideas_parse.py on the r
 Conventions read today (trajectory_tracking_agent/ideas.md, 2026-11-24):
 
     ## I'll try                                   -> lane "agent"   (the first list)
-    ## Suggestions for Zach                       -> lane "human"   (any heading starting "Suggestions")
+    ## Suggestions for Zach                       -> lane "human"   (a heading starting "Suggestions", "Needs a human",
+                                                                     "Needs Zach", "Needs you" or "For Zach": HUMAN_HEADINGS)
     - [ ] <idea>. Expect: <effect>.               -> open, with its expected effect in words
     - [x] ~~<idea>~~ → `<solution id>` <result>   -> closed, linked to the solution(s) named after the arrow
 
@@ -157,8 +158,14 @@ def _idea(index: int, line_no: int, lane: str, section: str, raw_lines: list[str
     )
 
 
+# The headings that open Zach's lane. WHY a list, not one word (2026-11-25, the AGI flywheel agent): `blackbox new`'s
+# scaffold writes "## Needs a human" while this reader knew only "Suggestions…", so a fresh box filed his items as the
+# agent's and "For Zach to decide" read 0. test_ideas_parse.HumanLaneHeadings pins the scaffold's own heading here.
+HUMAN_HEADINGS = ("suggestion", "needs a human", "needs zach", "needs you", "for zach")
+
+
 def lane_of(heading: str) -> str:
-    return "human" if heading.strip().lower().startswith("suggestion") else "agent"
+    return "human" if heading.strip().lower().startswith(HUMAN_HEADINGS) else "agent"
 
 
 def parse(text: str) -> IdeasDoc:

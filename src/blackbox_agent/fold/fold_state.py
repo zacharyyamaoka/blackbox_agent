@@ -355,7 +355,10 @@ def simple_yaml(block: str) -> dict:
 def front_matter_rows(t: Tree, folder: str) -> list[dict]:
     """feedback/, audits/, agents/: one row per Markdown file, its simple `key: value` front matter and first heading."""
     rows = []
-    for path in sorted(p for p in t.files if p.startswith(folder + "/") and p.endswith(".md")):
+    # WHY not README.md: a folder's own readme is not a row (`blackbox new` writes feedback/README.md, which read as a
+    # piece of feedback; robot_brain_agent 2026-11-25). Same rule as the notes fold.
+    for path in sorted(p for p in t.files if p.startswith(folder + "/") and p.endswith(".md")
+                       and not p.endswith("/README.md")):
         text = t.text(path) or ""
         m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
         meta = simple_yaml(m.group(1)) if m else {}
@@ -899,22 +902,41 @@ def fold_rc(t: Tree, arm: str) -> tuple[dict, dict]:
 
 # ── plug-in slices (wave 2) and the driver ───────────────────────────────────────────────────────────────────────
 def plugin_slices(facts: dict) -> None:
+    """Each tools/folds/<slice>.py in name order, except that a module naming `AFTER = ("spec", ...)` runs once those
+    have. WHY (CONTRACT §20): the goals fold judges criteria on the spec slice and enriches the ideas rows, and "goals"
+    sorts before both; every module without AFTER runs exactly where it did, so every state folds as before."""
     folder = HERE / "folds"
+    mods = []
     for mod_path in sorted(folder.glob("*.py")) if folder.exists() else []:
         if mod_path.name.startswith("_"):
             continue
         spec = importlib.util.spec_from_file_location(f"bbfold_{mod_path.stem}", mod_path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        mods.append((mod_path.stem, mod))
+    names = {n for n, _ in mods}
+    done: set[str] = set()
+    while mods:
+        ready = next(((n, m) for n, m in mods if all(a in done or a not in names for a in getattr(m, "AFTER", ()))), mods[0])
+        mods.remove(ready)
+        name, mod = ready
         value = mod.fold(facts)
+        done.add(name)
         if value is not None:
-            facts["state"][mod_path.stem] = value
+            facts["state"][name] = value
 
 
 def fold(kind: str, repo: str, ref: str, arm: str = "ur5e", spec_map: str | None = None, junit: str | None = None,
          junit_dir: str | None = None) -> dict:
-    t = Tree(repo, ref)
+    return fold_tree(Tree(repo, ref), kind, arm, spec_map, junit, junit_dir)
+
+
+def fold_tree(t: Tree, kind: str = "standard", arm: str = "ur5e", spec_map: str | None = None, junit: str | None = None,
+              junit_dir: str | None = None, as_of: str | None = None) -> dict:
+    """The fold of one tree (a box at a ref, or tools/fold_fixture.py's overlay of one). `as_of`: the clock a slice that
+    judges against time (goals, CONTRACT §20) reads; None = the ref's commit time, so a re-fold is byte-identical."""
     state, facts = fold_rc(t, arm) if kind == "rc" else fold_standard(t)
+    facts["as_of"] = as_of
     # the spec slice's inputs (CONTRACT §16.1), paths relative to viewer/: a spec map, a junit XML of a run at the ref;
     # §16.8: a directory of junit XMLs, one per commit (<sha7>.xml or .xml.gz), for the spec_history slice
     facts["spec_map"], facts["junit"], facts["junit_dir"] = spec_map, junit, junit_dir

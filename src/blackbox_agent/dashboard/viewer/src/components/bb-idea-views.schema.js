@@ -4,7 +4,7 @@
 export default {
   tag: 'bb-idea-views', name: 'Idea views (Lens board)', version: 1, wave: 2,
   description: "The idea queue as one data-ui <data-views> over state.json ideas, five presets on one row set: Roadmap (rungs as lanes, ideas as cards in implementation order, Needs: lines as the only edges; Ladder / Depth / Now · Next · Later; click a card for its zoom card), Table, Board, Lineage, Text. A fuel gauge above it. Inferred rungs and edges carry their mark.",
-  reads: ['ideas', 'iterations', 'gates'],
+  reads: ['ideas', 'iterations', 'gates', 'goals'],
   settings: [
     { id: 'preset', type: 'select', label: 'Preset it opens on', default: 'roadmap',
       options: [{ value: 'roadmap', label: 'Roadmap (lanes = rungs)' }, { value: 'table', label: 'Table' }, { value: 'board', label: 'Board (kanban)' },
@@ -19,6 +19,8 @@ export default {
     { id: 'gate_state', type: 'checkbox', label: 'Gate state in each lane header', default: true,
       info: "03's gate state: the rung in force reads climbing, its best and how many gates pass; the rest not started" },
     { id: 'fuel', type: 'checkbox', label: 'Fuel gauge above the views', default: true },
+    { id: 'goal', type: 'text', label: 'Only one goal\'s ideas', default: '',
+      info: "CONTRACT §20: a goal id (G2) shows its roadmap in plan order, `none` the ideas that serve no goal; empty = every idea. The Goals tab's \"Its N ideas →\" sets it (#ideas?goal=G2)" },
   ],
   blocks: [],
   presets: [{ name: 'Idea views' }],

@@ -3,6 +3,8 @@ export default `
 bb-headliner .bbh { background: var(--bb-card); border: 1px solid var(--bb-border); border-radius: 16px; padding: 18px 18px 12px; position: relative; min-width: 0; }
 bb-headliner .bbh-box { font-size: 13px; color: var(--bb-muted); margin-bottom: 2px; overflow-wrap: anywhere; }
 bb-headliner .bbh-box b { color: var(--bb-fg); font-weight: 600; }
+bb-headliner a.bbh-obj { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+bb-headliner a.bbh-obj:hover { color: var(--bb-accent); }
 bb-headliner .bbh-ph { display: block; margin-top: 10px; overflow: visible; }
 bb-headliner .bbh-ph-axis { stroke: var(--bb-border); stroke-width: 1; }
 bb-headliner .bbh-ph-target { stroke: var(--bb-muted); stroke-width: 1; stroke-dasharray: 5 4; }

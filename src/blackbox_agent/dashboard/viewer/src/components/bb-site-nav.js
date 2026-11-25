@@ -25,6 +25,7 @@ import { BBElement, esc } from '../core/element.js';
 import { register } from '../core/registry.js';
 import { fill } from '../core/context.js';
 import { customTabs } from '../core/tabs.js';
+import { pagesFor } from '../core/slices.js';
 import { APPEARANCES, APPEARANCE_KEY, currentAppearance, setAppearance, restoreAppearance, storedAppearance } from '../core/appearance.js';
 import { GITHUB, GEAR } from '../core/icons.js';
 import { BBNav } from './bb-nav.js';
@@ -228,7 +229,7 @@ bb-site-nav .bbs-fail { align-self: center; color: var(--bb-muted); font-size: 1
   /** The model for this page: the dashboards, where this page is, the counts. */
   model() {
     const own = customTabs(this.data).map((t) => ({ slug: t.slug, label: t.label }));
-    const model = makeModel(this._doc, this._navUrl, { own });
+    const model = makeModel(this._doc, this._navUrl, { own, pages: pagesFor(this.data) });
     const s = this.settings;
     const where = locate(model, { url: location.href, current: s.current, page: s.page });
     return { model, ...where };

@@ -6,7 +6,7 @@
    repo) and a settings gear: Appearance, Light / Dark / System (src/core/appearance.js), remembered in this browser. */
 import { BBElement, esc } from '../core/element.js';
 import { register } from '../core/registry.js';
-import { PAGES, PAGE_LABELS, pageId, specTested } from '../core/slices.js';
+import { PAGE_LABELS, pageId, specTested, pagesFor } from '../core/slices.js';
 import { fill } from '../core/context.js';
 import { customTabs, ADD_TAB } from '../core/tabs.js';
 import { APPEARANCES, currentAppearance, setAppearance, restoreAppearance, storedAppearance } from '../core/appearance.js';
@@ -121,6 +121,11 @@ bb-nav .bbn-pop li code { margin-right: 6px; }
     }
     if (Array.isArray(d.references)) c.references = { text: String(d.references.length), title: 'references: what the box builds on' };
     if (d.notes && Array.isArray(d.notes.rows) && d.notes.rows.length) c.notes = { text: String(d.notes.rows.length), title: `notes in ${d.notes.folder || 'the box'}` };
+    // CONTRACT §20: the goals not met yet (open, missed or not judgeable), the tab's work left
+    if (d.goals && Array.isArray(d.goals.goals)) {
+      const left = d.goals.goals.filter((g) => g.status !== 'met' && g.status !== 'met late').length;
+      c.goals = { text: String(left), title: `${left} of ${d.goals.goals.length} goals not met` };
+    }
     return c;
   }
 
@@ -140,7 +145,8 @@ bb-nav .bbn-pop li code { margin-right: 6px; }
     const own = customTabs(d);
     const current = this.currentTab(own);
     const tab = (id, label, c, cls = '') => `<a class="bbn-tab${cls}" role="tab" href="${esc(fill(pattern, { page: id }))}" data-page="${esc(id)}"${id === current ? ' aria-current="page" aria-selected="true"' : ' aria-selected="false"'}>${esc(label)}${c ? `<span class="bbn-count${c.bf ? ' bf' : ''}" title="${esc(c.title)}">${esc(c.text)}</span>` : ''}</a>`;
-    const tabs = PAGES.map((p) => tab(p, PAGE_LABELS[p], counts[p])).join('')
+    // WHY pagesFor: a tab that draws nothing for this box (Goals with no goals/) is not listed (CONTRACT §20)
+    const tabs = pagesFor(d).map((p) => tab(p, PAGE_LABELS[p], counts[p])).join('')
       + (own.length ? '<span class="bbn-sep" aria-hidden="true"></span>' : '') + own.map((t) => tab(t.slug, t.label, null, ' own')).join('');
     const needs = Array.isArray(d.needs) ? d.needs.length : null;
     const pill = s.needs_pill && needs !== null

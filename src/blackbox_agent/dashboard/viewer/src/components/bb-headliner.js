@@ -85,7 +85,7 @@ export class BBHeadliner extends BBElement {
     const nAbl = this.model.ablations.length;
     const split = splitOf(o);
     const box = s.title ? esc(s.title)
-      : `<b>${esc(d.box || '')}</b> · ${esc(o.name || 'objective')} (${[split, o.unit].filter(Boolean).map(esc).join(', ')}${split || o.unit ? ', ' : ''}${o.direction === 'higher' ? 'higher' : 'lower'} is better${targetText(o) ? `, ${esc(targetText(o))}` : ''})${o.ruler ? ` · ruler ${esc(o.ruler)}` : ''}`;
+      : `<b>${esc(d.box || '')}</b> · ${this.objectiveName(o.name || 'objective')} (${[split, o.unit].filter(Boolean).map(esc).join(', ')}${split || o.unit ? ', ' : ''}${o.direction === 'higher' ? 'higher' : 'lower'} is better${targetText(o) ? `, ${esc(targetText(o))}` : ''})${o.ruler ? ` · ruler ${esc(o.ruler)}` : ''}`;
     this.innerHTML = `<div class="bbh">
       <div class="bbh-box">${box}</div>
       <div class="bbh-headline" aria-live="polite"></div>
@@ -100,6 +100,15 @@ export class BBHeadliner extends BBElement {
     </div>`;
     this.querySelector('[data-abl]')?.addEventListener('change', (e) => { this.ui.ab = e.target.checked; this.draw(); });
     this.draw();
+  }
+
+  /** The objective's name, a link to its page when the box has one (the links slice names it; the linking round:
+      "every objective should basically link to a more detailed page"). The page's URL is the context's `objective`
+      pattern (the dashboard: #objective; the landing: dashboard/#objective); with none, the plain name. */
+  objectiveName(name) {
+    const has = this.data.links && this.data.links.objective && this.data.links.objective.node;
+    const href = has ? this.context.href('objective') : '';
+    return href ? `<a class="bbh-obj" href="${esc(href)}" title="What it is, why, and how it is calculated">${esc(name)}</a>` : esc(name);
   }
 
   /** Nothing to plot yet: the objective as the box declares it (name, unit, direction, target, ruler), what is missing,
@@ -122,7 +131,7 @@ export class BBHeadliner extends BBElement {
       ? `<line x1="44" x2="100%" y1="${ty}" y2="${ty}" class="bbh-ph-target"/><text x="50" y="${ty - 6}" class="bbh-ph-label">${esc(targetText(o))}</text>` : '';
     this.innerHTML = `<div class="bb-empty bbh-empty" data-empty="bb-headliner">
       <div class="bbh-box"><b>${esc(d.box || '')}</b>${ruler}</div>
-      <b><span class="bb-mono">${esc(o.name || 'The objective')}</span> (${esc(what)}): ${esc(missing)}.</b>
+      <b><span class="bb-mono">${this.objectiveName(o.name || 'The objective')}</span> (${esc(what)}): ${esc(missing)}.</b>
       <div class="bb-fills">Every scored solution will be a dot here, and the best admissible one so far a line. Scoring a
         solution adds its row to the box's ledger; the fold of the next commit plots it.</div>
       <svg class="bbh-ph" width="100%" height="${h}" role="img" aria-label="${esc(`An empty chart: ${o.name || 'the objective'} against solution number`)}">

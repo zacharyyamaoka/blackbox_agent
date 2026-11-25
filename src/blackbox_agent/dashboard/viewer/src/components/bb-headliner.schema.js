@@ -3,7 +3,8 @@ export default {
   tag: 'bb-headliner', name: 'Headliner (Ticker)', version: 1, wave: 1,
   description: 'One big number (the best admissible objective in the window) and the best-so-far curve: admissible only on the line, red rings for gate failures, log or linear, x = iteration, date or commit, range chips, click a dot to open the solution.',
   // `gates` (lane ES): how many gates a not-admissible solution fails OF, in the none-admissible-yet note
-  reads: ['iterations', 'ablations', 'gates'],
+  // `links` (the linking round): the objective's name links to its page when the box names one
+  reads: ['iterations', 'ablations', 'gates', 'links'],
   settings: [
     { id: 'x', type: 'select', label: 'x axis', default: 'number',
       options: [{ value: 'number', label: 'Solution #' }, { value: 'date', label: 'Date' }, { value: 'commit', label: 'Commit' }] },

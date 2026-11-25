@@ -116,7 +116,9 @@ def fold(facts: dict):
         tests = _load("bb_vt_extract", VT / "junit_extract.py").junit(str(VIEWER / junit_path))
     titles = objective_sections(tree.text("OBJECTIVES.md") or "") if "OBJECTIVES.md" in tree.fileset else {}
     # WHY: natural order, so O4.10 follows O4.9 (a plain sort put it before O4.2 on the Spec tab).
-    files = sorted((p for p in tree.files if re.match(r"^specs/[^/]+\.md$", p)),
+    # WHY not README.md: a folder's own readme is not a requirement (`blackbox new` writes specs/README.md; robot_brain_agent
+    # 2026-11-25 counted it as a shall). Same rule as the notes fold (data-ui noteFiles).
+    files = sorted((p for p in tree.files if re.match(r"^specs/[^/]+\.md$", p) and not p.endswith("/README.md")),
                    key=lambda p: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", p)])
     rows = []
     if files:

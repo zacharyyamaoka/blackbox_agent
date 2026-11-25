@@ -1,7 +1,7 @@
 {
  "what": "data-ui as this app serves it: re-vendor with data-ui vendor, never edit",
  "repo": "data-ui",
- "ref": "main",
+ "ref": "78d2049",
  "version": "0.1.0",
  "commit": "78d2049053f43bf81d3fdedfdc43e338a9b0bf1e",
  "on_main": true,
@@ -30,7 +30,8 @@
   "chart",
   "cards",
   "calendar",
-  "graph"
+  "graph",
+  "pace"
  ],
  "skipped": {
   "*.map": "source maps: only a debugger asks for them",
@@ -57,7 +58,6 @@
   "views/map.js": "the map view was left out",
   "views/maplibre-gl-worker.mjs": "the map view was left out",
   "views/media.js": "the media view was left out",
-  "views/pace.js": "the pace view was left out",
   "views/playback.js": "the playback view was left out",
   "views/record.js": "the record view was left out",
   "views/scene3d.js": "the scene3d view was left out",
@@ -317,6 +317,7 @@
   "views/lineage.js": "872c463ee1ece9764054556646dc60b9f13410e481894bbcbdee53933543fbde",
   "views/list.js": "722214a84fa1aaa933a473a8dd9824a65752e243afdb5380c722226d56df87e9",
   "views/mesh.js": "a1851c28bfe11fc110b1c0230332bc30fd6b1fd481bf5032f61645dd57c95d51",
+  "views/pace.js": "50748781c3d9b527a7f7c8c58a156b8af7f8afdf619b2849e8d8c5dbafb38330",
   "views/table.js": "9e99c175075e6edfa2a8b08411f2eb9ea14dcd3961662863fdb36fa40de94b1b",
   "views/timeline.js": "a51a1bd75a749143ec638f6a0720a333d8ab6fbe4d55582f4011b184895a50e5"
  },

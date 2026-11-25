@@ -51,11 +51,16 @@ def _serve(a: argparse.Namespace) -> int:
         out = tmp / "site"
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(out))
         with _server(a.port, handler) as server:  # bound before the build: a busy --port fails at once
-            record = build(Path(a.box), out, a.ref)
+            # WHY local by default: on the author's machine every citation should open at its words (the linking ask:
+            # "when I look at it locally I want it to all be fully fully linked"); --public previews what Pages shows
+            record = build(Path(a.box), out, a.ref, local=not a.public)
             port = server.server_address[1]
+            lk = record.get("links") or {}
+            linked = (f"; sources: {lk['located']} of {lk['private']} private resolve, {lk['broken']} broken"
+                      if lk.get("mode") == "local" else "; sources: public (labels only)" if lk else "")
             print(f"http://127.0.0.1:{port}/  {record['box']} @ {record['ref'][:7]} (dashboard: /dashboard/; "
-                  f"Ctrl-C stops it)" + (f"; {DEFAULT_PORT} was busy" if a.port is None and port != DEFAULT_PORT else ""),
-                  flush=True)
+                  f"Ctrl-C stops it)" + (f"; {DEFAULT_PORT} was busy" if a.port is None and port != DEFAULT_PORT else "")
+                  + linked, flush=True)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:
@@ -131,6 +136,8 @@ def parser() -> argparse.ArgumentParser:
                    help=f"default {DEFAULT_PORT}, or a free port when {DEFAULT_PORT} is busy; a port you name must be free "
                         "(0 picks a free one)")
     p.add_argument("--ref", default="HEAD")
+    p.add_argument("--public", action="store_true",
+                   help="serve the public build (private sources as labels), as GitHub Pages shows it")
     p.set_defaults(run=_serve)
 
     p = sub.add_parser("new", help="write a box skeleton (the stock files, an empty ledger) into a new folder")

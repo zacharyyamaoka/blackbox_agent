@@ -1,6 +1,18 @@
 # A black-box box's live page, for any box: fold the pushed commit, build the landing + dashboard + the box's own site
-# files with blackbox_agent (`blackbox build`), and deploy it to GitHub Pages. A box calls it with six lines (README,
-# "Deploy"); its Pages source must be "GitHub Actions" (Settings, Pages).
+# files with blackbox_agent (`blackbox build`), and deploy it where the box's README says it lives. A box calls it with
+# a few lines (README, "Deploy").
+#
+# WHERE IT GOES: the README's live-page line ("[▶ Live landing page](<url>)") is the one place that names the host.
+#   https://<owner>.github.io/<repo>/  GitHub Pages (Settings, Pages, Source: "GitHub Actions"). A private repo skips
+#                                      it: Pages on a private repo needs a paid plan.
+#   https://<any other host>/          Cloudflare: a static-assets Worker on that host (a Custom Domain), deployed with
+#                                      the box's CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets, and only
+#                                      behind a Cloudflare Access sign-in.
+# WHY one switch, in the README (Zach, 2026-11-25): "for public github repos use github io, but for private do cloud
+#   flare. everythign else is the same, its just who is hosting it changes". The build is identical for both hosts.
+# WHY Cloudflare only behind Access: a box's page folds its git history (commit messages, KPIs, ideas), so a private
+#   box's page must not be public. The deploy refuses a host that no Access app covers, and takes the Worker down again
+#   if the page answers without a sign-in.
 #
 # WHY two jobs: with upload and deploy in one job, deploy-pages twice found "0 artifacts" 0.3 s after a successful
 #   upload; GitHub's own static-site template uploads in a build job and deploys in a second job.
@@ -18,9 +30,17 @@ on:
         type: string
         default: v0
       pages:
-        description: "auto: deploy to Pages when the repo is public; always: deploy anyway (a paid plan); never"
+        description: "auto: deploy where the README's live-page line points (github.io: GitHub Pages when the repo is
+          public; any other host: Cloudflare behind Access); always: GitHub Pages even when private (a paid plan);
+          never: build only"
         type: string
         default: auto
+    secrets:
+      # WHY declared optional: a public box on GitHub Pages passes them empty (pages.yml is the same for every box)
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,28 +48,50 @@ jobs:
     permissions:
       contents: read
       pages: read
-    # WHY the visibility gate (the Agent Activity Agent, 2026-11-25): Pages on a private repo needs a paid plan, so
-    #   configure-pages failed every push of a private box. A private box still builds its site on every push (CI
-    #   proves it builds); only the Pages steps skip. Asked of the API, so it holds for every event, not only push.
+    # WHY a queue per ref: two quick pushes must reach Cloudflare in order; the older deploy never lands last
+    concurrency:
+      group: blackbox-site-${{ github.ref }}
+      cancel-in-progress: false
     outputs:
-      deploy: ${{ steps.vis.outputs.deploy }}
+      deploy: ${{ steps.where.outputs.github }}
     steps:
-      - id: vis
-        name: Pages or not
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PAGES: ${{ inputs.pages }}
-        run: |
-          private=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)
-          if [ "$PAGES" = always ] || { [ "$PAGES" = auto ] && [ "$private" = false ]; }; then
-            echo deploy=true >> "$GITHUB_OUTPUT"
-          else
-            echo deploy=false >> "$GITHUB_OUTPUT"
-            echo "::notice::Built the site; skipped Pages (private: $private, pages: $PAGES). Pages on a private repo needs a paid plan; pass pages: always to deploy anyway."
-          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # WHY asked of the API and the README every run: it holds for every event (push, dispatch), and a box moves hosts
+      #   by editing one line.
+      - id: where
+        name: Where the page goes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES: ${{ inputs.pages }}
+          HAS_CLOUDFLARE: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: |
+          private=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)
+          url=$(grep -m1 -oE 'Live landing page\]\(https://[^)[:space:]]+\)' README.md 2>/dev/null \
+                | sed -E 's/^.*\((https:[^)]*)\)$/\1/' || true)
+          host=$(printf '%s' "$url" | sed -E 's#^https://([^/]+).*$#\1#')
+          github=false; cloudflare=false
+          if [ "$PAGES" = never ]; then
+            echo "::notice::Built the site; deployed nothing (pages: never)."
+          elif [ "$PAGES" = always ]; then
+            github=true
+          elif [ -z "$url" ]; then
+            echo "::notice::Built the site; deployed nothing: README.md has no '[▶ Live landing page](<url>)' line."
+          elif [[ "$host" == *.github.io ]]; then
+            if [ "$private" = false ]; then
+              github=true
+            else
+              echo "::notice::Built the site; skipped GitHub Pages: the repo is private and Pages on a private repo needs a paid plan. Point the README's live-page line at a Cloudflare host to publish it behind a sign-in."
+            fi
+          elif ! [[ "$host" =~ ^[a-z0-9-]+(\.[a-z0-9-]+)+$ ]]; then
+            echo "::error::README.md's live-page host '$host' is not a plain lowercase hostname"; exit 1
+          elif [ "$HAS_CLOUDFLARE" = true ]; then
+            cloudflare=true
+          else
+            echo "::notice::Built the site; deployed nothing: the README puts the page on $host (Cloudflare), but the box has no CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets, or its pages.yml does not pass them."
+          fi
+          { echo "github=$github"; echo "cloudflare=$cloudflare"; echo "host=$host"; } >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@v6
       - name: blackbox build
         env:
@@ -59,11 +101,87 @@ jobs:
           if [ -f .github/fold-requirements.txt ]; then extra=(--with-requirements .github/fold-requirements.txt); fi
           uvx "${extra[@]}" --from "git+https://github.com/zacharyyamaoka/blackbox_agent@${BLACKBOX_REF}" blackbox build --box . --out _site
       - uses: actions/configure-pages@v5
-        if: steps.vis.outputs.deploy == 'true'
+        if: steps.where.outputs.github == 'true'
       - uses: actions/upload-pages-artifact@v3
-        if: steps.vis.outputs.deploy == 'true'
+        if: steps.where.outputs.github == 'true'
         with:
           path: _site
+      - name: Cloudflare Access covers the host (else nothing is published)
+        if: steps.where.outputs.cloudflare == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HOST: ${{ steps.where.outputs.host }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.request
+          host, account = os.environ["HOST"], os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/accounts/{account}/access/apps?per_page=1000",
+                                       headers={"Authorization": "Bearer " + os.environ["CLOUDFLARE_API_TOKEN"]})
+          try:
+              apps = json.load(urllib.request.urlopen(req, timeout=30)).get("result") or []
+          except Exception as e:  # noqa: BLE001 - any failure here means "not proven covered"
+              sys.exit(f"::error::Could not list Cloudflare Access apps ({e}): the token needs Access: Apps and Policies.")
+          def covers(pattern: str) -> bool:
+              p = pattern.strip().lower().rstrip("/")
+              if not p or "/" in p:  # a path-scoped app protects only that path, not the whole page
+                  return False
+              # WHY one level only: Access's *.zone covers a.zone, never a.b.zone or the zone itself
+              return p == host or (p.startswith("*.") and host.endswith(p[1:]) and host.count(".") == p.count("."))
+          names = []
+          for app in apps:
+              if app.get("type") != "self_hosted":
+                  continue
+              names.append(app.get("domain") or "")
+              names += [d.get("uri") or "" for d in app.get("destinations") or [] if d.get("type") == "public"]
+              names += app.get("self_hosted_domains") or []
+          if not any(covers(n) for n in names):
+              sys.exit(f"::error::No Cloudflare Access app covers {host}: refusing to publish this page without a sign-in "
+                       f"in front of it. Add one (Zero Trust > Access > Applications, self-hosted, *.<zone>).")
+          print(f"Cloudflare Access covers {host}")
+          PY
+      - name: Deploy to Cloudflare
+        if: steps.where.outputs.cloudflare == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HOST: ${{ steps.where.outputs.host }}
+        # WHY workers_dev and preview_urls off: those hostnames sit outside the Access app and would bypass the sign-in
+        # WHY a config written here: the box keeps no Cloudflare file; the host comes from its README alone
+        run: |
+          name="box-${HOST%%.*}"; name="${name:0:63}"
+          cat > "$RUNNER_TEMP/wrangler.json" <<EOF
+          {"name": "$name", "compatibility_date": "2026-11-01",
+           "assets": {"directory": "$PWD/_site", "html_handling": "auto-trailing-slash"},
+           "workers_dev": false, "preview_urls": false,
+           "routes": [{"pattern": "$HOST", "custom_domain": true}]}
+          EOF
+          npx --yes wrangler@4.151.0 deploy --config "$RUNNER_TEMP/wrangler.json"
+          echo "WORKER=$name" >> "$GITHUB_ENV"
+      - name: The page asks for a sign-in (else it comes down)
+        if: steps.where.outputs.cloudflare == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HOST: ${{ steps.where.outputs.host }}
+        # WHY up to 3 min: a new Custom Domain waits for its certificate before it answers at all
+        run: |
+          out=""
+          for _ in $(seq 1 36); do
+            out=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "https://$HOST/" || true)
+            code=${out%% *}; where=${out#* }
+            if [[ "$code" =~ ^30[1278]$ && "$where" == *cloudflareaccess.com* ]]; then
+              echo "https://$HOST/ asks for a Cloudflare Access sign-in"; exit 0
+            fi
+            if [ "$code" = 200 ]; then
+              echo "::error::https://$HOST/ answered 200 without a sign-in: deleting the Worker $WORKER"
+              curl -s -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER?force=true"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::https://$HOST/ never asked for a sign-in within 3 min (last answer: $out)"; exit 1
   deploy:
     needs: build
     if: needs.build.outputs.deploy == 'true'

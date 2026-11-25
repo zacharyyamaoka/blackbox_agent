@@ -4,3 +4,4 @@ permissions: {contents: read, pages: write, id-token: write}
 jobs:
   site:
     uses: zacharyyamaoka/blackbox_agent/.github/workflows/site.yml@v0
+    secrets: {CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}", CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"}

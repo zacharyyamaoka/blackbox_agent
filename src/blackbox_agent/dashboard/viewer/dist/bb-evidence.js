@@ -23,9 +23,11 @@ var SLICES = [
   "playback",
   "source",
   "ablation_study",
+  "spec_history",
   "analysis",
   "notes",
-  "tabs"
+  "tabs",
+  "links"
 ];
 var ROW_SLICES = [
   "iterations",
@@ -63,7 +65,7 @@ var PAGES = [
   "notes"
 ];
 var PAGE_ALIASES = { reports: "analysis" };
-var RESERVED_PAGES = [...PAGES, ...Object.keys(PAGE_ALIASES), "solution", "tab"];
+var RESERVED_PAGES = [...PAGES, ...Object.keys(PAGE_ALIASES), "solution", "tab", "objective", "node"];
 var freeze = (o) => {
   if (o && typeof o === "object" && !Object.isFrozen(o)) {
     Object.freeze(o);
@@ -178,6 +180,7 @@ function distance(a, b) {
 // src/core/context.js
 var DEFAULT_LINKS = { page: "{page}.html", solution: "solution.html?id={id}" };
 var ASSET = /^(?!\/)(?![a-z]+:)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*(?:^|\/)solutions\/)[^?#]+\.(base|html|md|svg|png|jpg|jpeg|webp|gif|json)$/i;
+var NAV = /^(?![a-z][a-z0-9+.-]*:)(?!\/)(?!.*(?:^|\/)solutions\/)(?:\.\.\/|\.\/)*(?:[\w.-]+\/)*nav\.json$/i;
 function fill(pattern, vars) {
   return String(pattern || "").replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(vars[k] ?? ""));
 }
@@ -207,6 +210,15 @@ function makeContext({ state = null, stateUrl = null, pageUrl = null, page = "ov
       const res = await fetch(new URL(path, base));
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
       return res.text();
+    },
+    /** The site's bar file (bb-site-nav/1, CONTRACT §18): a relative path to a file named nav.json, its schema checked. */
+    async nav(path) {
+      if (!NAV.test(String(path))) throw new Error(`refused: ${path} is not the site's nav.json (a relative path to a file named nav.json)`);
+      const res = await fetch(new URL(path, base));
+      if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+      const doc = await res.json();
+      if (!doc || doc.schema !== "bb-site-nav/1") throw new Error(`${path}: schema is ${doc && doc.schema}, not bb-site-nav/1`);
+      return doc;
     },
     /** Fire bb-open from `el`; follow href unless a listener prevented it. */
     open(el2, detail) {
@@ -282,6 +294,8 @@ var TOKENS_CSS = `
 .bb-h { font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--bb-muted); margin: 0 0 10px; text-transform: uppercase; }
 .bb-empty { border: 1px dashed var(--bb-border); border-radius: calc(var(--bb-radius) + 4px); padding: 18px; color: var(--bb-muted); font-size: 14px; }
 .bb-empty b { color: var(--bb-fg); font-weight: 600; }
+.bb-empty .bb-fills { margin-top: 4px; }
+.bb-empty .bb-fills code { font-family: var(--bb-mono); font-size: .92em; }
 .bb-error { border: 1px solid var(--bb-bad); border-radius: calc(var(--bb-radius) + 4px); padding: 12px 14px; font-size: 13px; color: var(--bb-fg);
   background: color-mix(in srgb, var(--bb-bad) 8%, var(--bb-bg)); }
 .bb-error pre { white-space: pre-wrap; font: 12px/1.5 var(--bb-mono); margin: 6px 0 0; }
@@ -423,9 +437,21 @@ var BBElement = class extends HTMLElement {
   }
   render() {
   }
-  /** The standard empty state: the schema's sentence (or a specific one), never a blank box. */
+  /** The standard empty state, never a blank box: what will appear here (bold), then what fills it (.bb-fills: the box
+      file or command). The schema's `empty` holds both as sentences, "What appears. What fills it."; with no `hint`,
+      its first sentence is the what and the rest the fills (bb-data-page's rule for a page's `empty` setting). `hint`
+      is trusted HTML (a component's own markup); the text is escaped. WHY both parts (Zach, 2026-11-24: "even if the
+      data is not there then I think it should like render empty.... at least"): a bare "No rows yet" leaves a new box's
+      reader with nothing to do. */
   empty(text = this.schema.empty, hint = "") {
-    this.innerHTML = `<div class="bb-empty" data-empty="${this.localName}"><b>${esc(text)}</b>${hint ? `<div style="margin-top:4px">${hint}</div>` : ""}</div>`;
+    let what = String(text ?? ""), fills = "";
+    const cut = what.indexOf(". ");
+    if (cut > 0) {
+      fills = esc(what.slice(cut + 2));
+      what = what.slice(0, cut + 1);
+    }
+    if (hint) fills = fills ? `${fills} ${hint}` : hint;
+    this.innerHTML = `<div class="bb-empty" data-empty="${this.localName}"><b>${esc(what)}</b>${fills ? `<div class="bb-fills">${fills}</div>` : ""}</div>`;
   }
   fail(error) {
     this.innerHTML = `<div class="bb-error"><b>${esc(this.schema?.name || this.localName)} could not render.</b><pre>${esc(String(error?.message || error))}</pre></div>`;
@@ -15048,6 +15074,7 @@ var BBScene3D = class extends HTMLElement {
       c.material?.dispose();
     }
     this.pins = [];
+    if (this.labels) this.labels.innerHTML = "";
     this.badge.textContent = "";
     this.hlPoints = null;
     const S = this.samples;
@@ -15491,7 +15518,7 @@ var bb_evidence_schema_default = {
   limit: null,
   presets: [{ name: "Lens", settings: { layout: "lens" } }, { name: "Recorder", settings: { layout: "recorder" } }],
   events: ["bb-evidence-select", "bb-evidence-layout"],
-  empty: "No saved run: the box's export writes bb-run/1 records and lists them in playback.runs (CONTRACT \xA74, \xA714)."
+  empty: "No saved run yet. A run plays here, explained metric by metric, once the box's export writes bb-run/1 records and lists them in playback.runs (viewer CONTRACT \xA74, \xA714)."
 };
 
 // src/components/bb-evidence.css.js
@@ -15722,8 +15749,10 @@ var BBEvidence = class extends BBElement {
     this.innerHTML = '<div class="bb-muted" style="font-size:13px;padding:12px">Loading the run record\u2026</div>';
     const rec = await this.load(this.path);
     this.show(rec);
-    for (const r of runs) if (r.path !== this.path) this.load(r.path).then(() => this.chips(), () => {
-    });
+    if (s.picker && runs.length > 1 && runs.length <= 24) {
+      for (const r of runs) if (r.path !== this.path && typeof r.admissible !== "boolean") this.load(r.path).then(() => this.chips(), () => {
+      });
+    }
   }
   show(rec) {
     const s = this.settings;
@@ -15782,6 +15811,16 @@ var BBEvidence = class extends BBElement {
   }
   chips() {
     for (const b of this.querySelectorAll(".bbe-runs button")) {
+      const entry = this.runs.find((x) => x.path === b.dataset.run);
+      if (entry && typeof entry.admissible === "boolean") {
+        b.querySelector(".dot").className = `dot ${entry.admissible ? "ok" : "bad"}`;
+        continue;
+      }
+      if (!b.dataset.lazy) {
+        b.dataset.lazy = "1";
+        b.addEventListener("pointerenter", () => this.load(b.dataset.run).then(() => this.chips(), () => {
+        }), { once: true });
+      }
       const r = this.records.get(b.dataset.run);
       if (!r || typeof r.then === "function") continue;
       const gates = (r.metrics || []).filter((x) => x.kind === "gate");
@@ -15789,6 +15828,14 @@ var BBEvidence = class extends BBElement {
       b.querySelector(".dot").className = `dot ${gates.length ? bad ? "bad" : "ok" : ""}`;
       b.title = `${r.subject?.label || ""} \xB7 ${r.subject?.verdict || ""}`;
     }
+  }
+  // WHY (review 2026-11-25): with 244 chips the row scrolls sideways, and a deep-linked run's pressed chip sat ~19,000 px
+  // past its visible part. Scroll the ROW only (never scrollIntoView, which would also move the page), centring the chip.
+  showPressedChip() {
+    const row = this.querySelector(".bbe-runs"), chip = row?.querySelector('button[aria-pressed="true"]');
+    if (!row || !chip || row.scrollWidth <= row.clientWidth) return;
+    const r = row.getBoundingClientRect(), c = chip.getBoundingClientRect();
+    row.scrollLeft += c.left - r.left - (row.clientWidth - c.width) / 2;
   }
   note() {
     const s = this.settings, rec = this.rec;
@@ -15824,6 +15871,7 @@ var BBEvidence = class extends BBElement {
     }
     this.wire();
     this.chips();
+    this.showPressedChip();
     this.select(this.metricId, { quiet: true });
     this.seek(this.t);
   }
