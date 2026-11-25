@@ -1,6 +1,7 @@
 {
  "schema": "bb-site-nav/1",
- "what": "The site bar on every page of this box's site (the blackbox_agent viewer's <bb-site-nav>, CONTRACT §18; vendored in site/dashboard/ by blackbox_agent's tools/vendor_viewer.py): the box's name (to the landing page) and its dashboards in the top row, the open dashboard's own tabs below. A box adds its own domain dashboard (a page another repo builds, dropped into site/) with one entry in dashboards and its id in order, and that page includes the bar (README.md, 'Add a dashboard'). Every href is relative to this file.",
+ "layout": "switcher",
+ "what": "The site bar on every page of this box's site (the blackbox_agent viewer's <bb-site-nav>, CONTRACT §18; vendored in site/dashboard/ by blackbox_agent's tools/vendor_viewer.py): the box's name (to the landing page) then the open dashboard with ▾ in the top row, its menu listing every dashboard under its group's heading (\"layout\": \"switcher\"; \"two-rows\" spreads the dashboards out as tabs instead), the open dashboard's own tabs below. A box adds its own domain dashboard (a page another repo builds, dropped into site/) with one entry in dashboards and its id in order, and that page includes the bar (README.md, 'Add a dashboard'). Every href is relative to this file.",
  "site": {
   "name": "{{name}}",
   "landing": "index.html",

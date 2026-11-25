@@ -47,8 +47,13 @@ def test_nav_json_is_the_site_bar_file_and_every_link_is_a_page_of_the_site():
 
 def test_the_landing_opens_the_dashboard():
     html = (SITE / "index.html").read_text()
-    assert 'href="dashboard/#overview" data-open-dashboard' in html
     assert "<bb-site-nav" not in html, "the landing keeps its own bar (the dashboards' bar links back to it)"
+    if re.search(r"""<meta\s+name=["']bb-landing["']\s+content=["']own\b""", html, re.I):
+        return  # the box says this page is its own, on purpose (blackbox_agent's apply_template.py keeps it)
+    # the stock landing's skeleton, however the box grows the page: "Open the dashboard →" and the Ticker (bb-headliner)
+    assert 'href="dashboard/#overview" data-open-dashboard' in html, "the landing opens the dashboard"
+    assert "<bb-headliner" in html, ("the landing shows the progress (the stock Ticker), or says it is the box's own: "
+                                     '<meta name="bb-landing" content="own: <why>">')
 
 
 @pytest.mark.skipif(not (DASHBOARD / "VENDOR.json").exists(), reason="vendor the viewer: python3 ~/blackbox_agent/tools/vendor_viewer.py --box .")

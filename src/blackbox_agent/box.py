@@ -17,7 +17,6 @@ SCAFFOLD = PKG / "scaffold"
 RENAME = {"github/workflows/pages.yml": ".github/workflows/pages.yml", "gitignore": ".gitignore"}
 # from the stock template (template/): the README's live-page line and its test, the site bar's file
 FROM_TEMPLATE = ("site/nav.json", "tests/test_readme_landing_link.py")
-OBJECTIVE_LINE = re.compile(r"\*\*Objective \(one number, (lower|higher) is better\): `([A-Za-z_0-9]+)`\*\*")
 HOME_PATH = re.compile(r"/h[o]me/[A-Za-z0-9_.-]+")
 REL = re.compile(r"^(?![a-z][a-z0-9+.-]*:)(?!/)(?!.*(?:^|/)\.\.(?:/|$))\S*$", re.I)
 TEXT = {".html", ".js", ".mjs", ".css", ".json", ".jsonl", ".md", ".svg", ".txt", ".xml", ".base", ".csv", ".yml", ".yaml"}
@@ -85,10 +84,7 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
     for path in ("README.md", "OBJECTIVES.md", "ledger.jsonl", "AGENTS.md"):
         if path not in tracked:
             problems.append(f"{path} is missing (the format: README.md, OBJECTIVES.md, AGENTS.md, ledger.jsonl)")
-    objectives = text("OBJECTIVES.md")
-    if objectives is not None and not OBJECTIVE_LINE.search(objectives):
-        problems.append("OBJECTIVES.md names no objective: it needs the line "
-                        "**Objective (one number, lower is better): `<name>`**")
+    objectives_tracked = "OBJECTIVES.md" in tracked
     readme = text("README.md")
     if readme is not None:
         lines = [l for l in readme.splitlines() if l.strip()]
@@ -133,6 +129,13 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
         except BoxError as e:
             problems.append(f"the build fails: {e}")
             return problems, notes
+        # WHY from the folded state, not a regex of OBJECTIVES.md: the fold has the one rule for naming the objective
+        # (the objective line, its "(the objective)" marker, else the ranked scorecard's own); check and the page
+        # must never disagree about it.
+        state = json.loads((out / "data" / "state.json").read_text())
+        if objectives_tracked and not ((state.get("objective") or {}).get("name")):
+            problems.append("OBJECTIVES.md names no objective the fold can read: give it the line "
+                            "**Objective (one number, lower is better): `<name>`**")
         notes.append(f"landing: {record['landing']}; nav.json: {record['nav']}; overrides: "
                      f"{', '.join(record['overrides']) or 'none'}")
         problems += _nav_problems(out)

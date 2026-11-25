@@ -4,7 +4,12 @@
      like the separate landing page and then the open the dashboard button"; blackbox_agent proposals-landing 02): the
      goal first, the progress, "Open the dashboard →" in the bar and under the goal. The dashboard (dashboard/, the
      black-box viewer, vendored by tools/vendor_viewer.py) and every domain dashboard share one site bar (nav.json); its
-     box name links back here. Grow this page with the box's own story (trajectory_tracking_agent's plays its saved runs). -->
+     box name links back here. Grow this page with the box's own story (trajectory_tracking_agent's plays its saved runs).
+     WHY a hero that always draws (Zach, 2026-11-24, on a box born with a hand-written page: "there is no hero image …
+     even if the data is not there then I think it should like render empty.... at least"): #hero plays the box's saved
+     runs (bb-evidence) when its state lists any, else it is the progress view from the ledger (the Ticker, which says
+     what it will plot when nothing is scored yet); "How it's scored" is the objective and every gate as the box
+     declares them, judged or not. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -38,6 +43,11 @@
   .from { margin: 0 0 18px; color: var(--bb-muted, #71717a); font-size: 12.5px; }
   .cta { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 28px; }
   .block { padding: 8px 0 28px; }
+  .block h2 { font-size: 20px; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .lede { margin: 0 0 14px; color: var(--bb-muted, #71717a); max-width: 760px; }
+  .hero-visual { margin: 0; }
+  .hero-cap { margin: 8px 0 0; color: var(--bb-muted, #71717a); font-size: 13px; max-width: 760px; }
+  .objective-line { margin: 0 0 14px; }
   footer { border-top: 1px solid var(--bb-border, #e4e4e7); padding: 20px 0 48px; color: var(--bb-muted, #71717a); font-size: 13.5px; }
   footer h4 { margin: 0 0 6px; color: var(--bb-fg, #18181b); font-size: 13px; }
   footer ul { margin: 0; padding: 0; list-style: none; }
@@ -53,7 +63,7 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#goal">{{name}}</a>
-    <nav aria-label="On this page"><a href="#goal">Goal</a><a href="#progress">Progress</a></nav>
+    <nav aria-label="On this page"><a href="#goal">Goal</a><a href="#headliner">Progress</a><a href="#scoring">How it's scored</a></nav>
     <div class="cta-top">
       <a class="btn btn-primary" href="dashboard/#overview" data-open-dashboard><span class="long">Open the dashboard</span><span class="short">Dashboard</span> <span aria-hidden="true">→</span></a>
       <a class="btn btn-icon" href="https://github.com/{{owner}}/{{repo}}" aria-label="{{repo}} on GitHub" title="{{repo}} on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
@@ -65,14 +75,23 @@
     <p class="eyebrow">The goal</p>
     <h1>{{name}}</h1>
     <p class="goal" id="remit">A black-box agent: a frozen ruler, a scored population, one number that goes down.</p>
-    <p class="from">From <code>OBJECTIVES.md</code>, as the box's fold reads it (<code>data/state.json</code>)</p>
+    <p class="from" id="remit-from">The template's sentence, until the box's <code>status.json</code> names its <code>remit</code></p>
     <div class="cta">
       <a class="btn btn-primary btn-lg" href="dashboard/#overview" data-open-dashboard>Open the dashboard <span aria-hidden="true">→</span></a>
       <a class="btn btn-secondary btn-lg" href="https://github.com/{{owner}}/{{repo}}">GitHub</a>
     </div>
+    <figure class="hero-visual" id="hero">
+      <bb-headliner id="headliner" state-src="data/state.json" links='{"solution":"dashboard/#solution={id}"}'></bb-headliner>
+      <figcaption class="hero-cap" id="hero-cap">The progress, from the box's ledger: every scored solution a dot, the best admissible one so far the line. No saved run to replay yet: once the box's export writes bb-run/1 records and lists them in <code>playback.runs</code>, the replay plays here.</figcaption>
+    </figure>
   </section>
-  <section class="block" id="progress">
-    <bb-headliner state-src="data/state.json" links='{"solution":"dashboard/#solution={id}"}'></bb-headliner>
+  <section class="block" id="progress" hidden>
+    <h2>Progress</h2>
+  </section>
+  <section class="block" id="scoring">
+    <h2>How it's scored</h2>
+    <p class="objective-line" id="objective">The objective and the gates, from <code>OBJECTIVES.md</code>.</p>
+    <bb-gates state-src="data/state.json" settings='{"view":"tiles","toggle":false,"title":"Gates","show_why":true}'></bb-gates>
   </section>
 </main>
 <footer class="wrap">
@@ -80,12 +99,39 @@
   <ul id="dashboards"><li><a href="dashboard/#overview">Black box</a></li></ul>
 </footer>
 <script type="module" src="dashboard/viewer/src/components/bb-headliner.js"></script>
+<script type="module" src="dashboard/viewer/src/components/bb-gates.js"></script>
 <script type="module">
   // the goal in the box's own words (its fold's about.remit) and every dashboard nav.json lists, so this page never
   // goes stale when the box adds one
   const json = (u) => fetch(u).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${u}: HTTP ${r.status}`))));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  json('data/state.json').then((s) => { if (s.about && s.about.remit) document.getElementById('remit').textContent = s.about.remit.replace(/^./, (c) => c.toUpperCase()) + '.'; }).catch(() => {});
+  json('data/state.json').then((s) => {
+    if (s.about && s.about.remit) {
+      document.getElementById('remit').textContent = s.about.remit.replace(/^./, (c) => c.toUpperCase()) + '.';
+      document.getElementById('remit-from').innerHTML = 'From <code>status.json</code> (its <code>remit</code>), as the box\'s fold reads it (<code>data/state.json</code>)';
+    }
+    // the objective as the box declares it; what it does not declare is said, never filled in
+    const o = s.objective || {};
+    const dir = o.direction === 'higher' ? 'higher' : 'lower';
+    const target = Number.isFinite(o.target) ? `target ${dir === 'lower' ? '≤' : '≥'} ${o.target}${o.unit ? ` ${o.unit}` : ''}` : 'no target declared';
+    document.getElementById('objective').innerHTML = `<b>${o.name ? `<code>${esc(o.name)}</code>` : 'No objective named in OBJECTIVES.md yet'}</b>`
+      + ` (${[o.unit && `in ${esc(o.unit)}`, `${dir} is better`, esc(target)].filter(Boolean).join(', ')})`
+      + `${o.ruler ? ` · ruler ${esc(o.ruler)}${o.frozen ? `, frozen ${esc(o.frozen)}` : ''}` : ''}. A solution counts only when it passes every gate below.`;
+    // the hero: the box's saved runs when its state lists any (the replay, as trajectory_tracking_agent's landing plays
+    // them), the Ticker moving down to Progress; else the Ticker stays the hero
+    const runs = (s.playback && s.playback.runs) || [];
+    if (runs.length) {
+      import('./dashboard/viewer/src/components/bb-evidence.js').then(() => {
+        const hero = document.getElementById('hero'), progress = document.getElementById('progress');
+        const ev = document.createElement('bb-evidence');
+        ev.setAttribute('state-src', 'data/state.json');
+        progress.append(document.getElementById('headliner'));
+        progress.hidden = false;
+        hero.replaceChildren(ev);
+        hero.insertAdjacentHTML('beforeend', `<figcaption class="hero-cap">A saved run of ${runs.length === 1 ? 'one solution' : `${runs.length} runs`}, replayed from the box's export: every number is the ruler's, from the run's own record.</figcaption>`);
+      }).catch(() => {});
+    }
+  }).catch(() => {});
   json('nav.json').then((nav) => {
     const by = Object.fromEntries(nav.dashboards.map((d) => [d.id, d]));
     document.getElementById('dashboards').innerHTML = (nav.order || nav.dashboards.map((d) => d.id)).map((id) => by[id])

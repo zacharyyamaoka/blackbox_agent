@@ -60,10 +60,12 @@ def item_row(text: str) -> dict:
     else:
         cut = re.search(r":\s", t) or (re.search(r"\s[—–-]\s", t) if re.match(r"^\[[^\]]+\]\([^)]+\)", t) else None)
         head, rest = (t[:cut.start()], t[cut.end():]) if cut else (t, "")
-        p = re.search(r"(?<!\])\s*\(([^()]*)\)\s*$", head)
+        # WHY links allowed inside: robot_sdk_agent writes "… link checkers ([lychee](https://…)): …", an aside that names
+        # its own link; without them the aside stayed in the title (lane ES, 2026-11-24)
+        p = re.search(r"(?<!\])\s*\(((?:[^()\[]|\[[^\]]*\]\([^()]*\))*)\)\s*$", head)
         where = None
         if p and plain(head[:p.start()]):
-            where, head = p.group(1).strip().strip("`") or None, head[:p.start()]
+            where, head = plain(p.group(1)).strip("`") or None, head[:p.start()]
     found = LINK.search(head) or LINK.search(t)
     url = found.group(2) if found else (URL.search(t).group(0) if URL.search(t) else None)
     return {"title": plain(head), "url": url, "why": rest.strip() or None, "where": where}
@@ -134,10 +136,22 @@ def from_folder(tree) -> tuple[list[dict], dict]:
 
 def fold(facts: dict):
     t = facts["tree"]
-    if _notes.note_files(t, "references"):
-        rows, _ = from_folder(t)
-        return rows
     text = t.text("REFERENCES.md")
+    folder = from_folder(t)[0] if _notes.note_files(t, "references") else None
+    if folder is not None and text is not None:
+        # WHY both (lane ES): a private box keeps its 14-item REFERENCES.md and one migrated note under
+        # references/vibetracks/; read as the folder alone, the tab showed 1 row and lost the list. The list first, then
+        # the folder's notes, numbered on.
+        rows = from_list(text)
+        seen = {r["id"] for r in rows}
+        for k, r in enumerate(folder, len(rows) + 1):
+            r["n"] = k
+            if r["id"] in seen:
+                r["id"] = f"references/{r['id']}"
+            rows.append(r)
+        return rows
+    if folder is not None:
+        return folder
     if text is None:
         return None
     return from_list(text)

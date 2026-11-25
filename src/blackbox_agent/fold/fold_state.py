@@ -163,6 +163,9 @@ def objectives(text: str) -> dict:
     title = next((l.lstrip("# ").strip() for l in text.splitlines() if l.startswith("# ")), "")
     ruler = re.search(r"ruler (v\d+), frozen (\d{4}-\d\d-\d\d)", title)
     obj = re.search(r"\*\*Objective \(one number, (lower|higher) is better\): `([A-Za-z_0-9]+)`\*\*", text)
+    # WHY a second spelling: robot_sdk_agent names its objective in its metric table, "**`max_stale_hours`** (the
+    # objective)", with the direction in its ranking rule and status.json, not on that line (lane ES, 2026-11-24)
+    named = None if obj else re.search(r"\*\*`([A-Za-z_0-9]+)`\*\*\s*\(the objective\)", text)
     gates, in_gates = [], False
     for line in text.splitlines():
         if line.startswith("| Gate |"):
@@ -175,10 +178,14 @@ def objectives(text: str) -> dict:
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if not cells or set(cells[0]) <= {"-", " ", ":"}:
                 continue
-            gates.append({"id": cells[0].strip("`"), "pass_when": cells[1] if len(cells) > 1 else None,
+            # the gate's id is its first `code` span ("`upstream_public` (v2)": robot_sdk_agent marks the ruler that added
+            # it); WHY: read whole, the id named no scorecard gate and the gate fell through to "passes" (lane ES)
+            code = re.match(r"`([^`]+)`", cells[0])
+            gates.append({"id": code.group(1) if code else cells[0].strip("`"), "pass_when": cells[1] if len(cells) > 1 else None,
                           "why": cells[2] if len(cells) > 2 and cells[2] not in ("—", "-") else None})
     return {"title": title, "ruler": ruler.group(1) if ruler else None, "frozen": ruler.group(2) if ruler else None,
-            "name": obj.group(2) if obj else None, "direction": obj.group(1) if obj else "lower", "gates": gates}
+            "name": obj.group(2) if obj else named.group(1) if named else None,
+            "direction": obj.group(1) if obj else None, "gates": gates}
 
 
 # ── ideas.md (through the idea-queue lane's parser) ─────────────────────────────────────────────────────────────
@@ -249,7 +256,7 @@ def kpi_best(its: list[dict], objective: dict) -> dict:
     ints = its and all(isinstance(r["objective"], int) for r in its if r["objective"] is not None)
     k = {"id": "best", "label": "Best objective", "value": last, "unit": objective["unit"],
          "decimals": 0 if ints else 3, "better": objective["direction"], "spark": spark,
-         "from": f"{objective['name']}, best admissible over {len(its)} iteration{'s' if len(its) != 1 else ''}",
+         "from": f"{objective['name'] or 'the objective'}, best admissible over {len(its)} iteration{'s' if len(its) != 1 else ''}",
          "delta": pct_change(first, last) if (first is not None and last is not None and len(its) > 1) else None,
          "tone": "good" if (first is not None and last is not None and last != first) else "neutral",
          "source": "ledger.jsonl + solutions/*/meta.json"}
@@ -392,8 +399,9 @@ def activity_recent(t: Tree, ledger: list[dict], metas: dict) -> list[dict]:
         kind = "study run" if study else {"dev": "evaluation", "holdout": "holdout"}.get(split, split or "evaluation")
         obj = finite(r.get("objective"))
         verdict = None if obj is None else ("admissible" if r.get("admissible") is True else "failed a gate")
+        # a box whose rows name no split (robot_sdk_agent: each row one snapshot of the live directory) says no split
         rows.append({"t": r.get("t"), "day": (r.get("t") or "")[:10] or None, "kind": kind,
-                     "what": f"{sid} scored on {split}" + (f" ({r.get('ruler')})" if r.get("ruler") else ""),
+                     "what": f"{sid} scored" + (f" on {split}" if split else "") + (f" ({r.get('ruler')})" if r.get("ruler") else ""),
                      "who": ((r.get("proposed_by") or (metas.get(sid) or {}).get("proposed_by") or {}).get("agent")),
                      "commit": (r.get("repo_commit") or "")[:7] or None, "solution": sid, "verdict": verdict, "objective": obj})
     rows.sort(key=lambda r: -ts(r["t"]))
@@ -414,6 +422,16 @@ def added_in(t: Tree) -> dict[str, dict]:
     return oldest
 
 
+def failed_count(card: dict, gate: str):
+    """A pass/fail scorecard's failing-task count for one gate: the number it records ({gate: n}), or None where it records
+    the failed gates as a plain list (robot_sdk_agent: each gate one verdict, no tasks): never a count it did not write."""
+    fg = card.get("failed_gates")
+    if isinstance(fg, dict):
+        n = fg.get(gate)
+        return finite(n) if n is not None else None
+    return None
+
+
 def gates_slice(t: Tree, obj: dict, its: list[dict], fallback_failed: dict | None) -> list[dict] | None:
     if not obj["gates"]:
         return None
@@ -428,8 +446,7 @@ def gates_slice(t: Tree, obj: dict, its: list[dict], fallback_failed: dict | Non
             row["why_null"] = "no solution scored yet"
         elif card and not isinstance((card.get("gates") or {}).get(g["id"], {}), dict):
             # a box whose scorecard records each gate as one pass/fail: no threshold, no margin
-            failed = (card.get("failed_gates") or {}).get(g["id"])
-            row.update({"passed": card["gates"][g["id"]] is True, "failed_tasks": finite(failed) if failed is not None else None,
+            row.update({"passed": card["gates"][g["id"]] is True, "failed_tasks": failed_count(card, g["id"]),
                         "tasks": len(card.get("tasks") or []) or None, "source": f"solutions/{best['id']}/scorecard.json",
                         "why_null": "pass/fail gate: no margin"})
         elif card and g["id"] in (card.get("gates") or {}):
@@ -534,13 +551,14 @@ class SavedRuns:
         return self.cache[key]
 
 
-def gate_results(t: Tree, row: dict, gates: list[dict], runs: SavedRuns) -> dict | None:
+def gate_results(t: Tree, row: dict, gates: list[dict], runs: SavedRuns, split: str | None = "dev") -> dict | None:
     """One solution's own verdict on each OBJECTIVES.md gate, from its dev scorecard (the ruler's output, never its code):
     the failing tasks with the gate's per-task value and the ruler's note on that task, the worst task and the margin
     (positive = inside the limit), and where the box saved a run of a failing task, the moment in it: the red spans, the
     run's length, its worst instant. Null with a why where the box records less; never a number it did not write."""
     card = t.json(f"solutions/{row['id']}/scorecard.json")
-    if not card or card.get("split") != "dev":
+    # the ranking scorecard: split "dev", or (a box whose rows name no split, robot_sdk_agent) one that names none
+    if not card or not (card.get("split") == "dev" if split == "dev" else "split" not in card):
         return None
     tasks = [x for x in card.get("tasks") or [] if isinstance(x, dict)]
     task_ids = [x.get("task", x.get("id")) for x in tasks]
@@ -554,8 +572,8 @@ def gate_results(t: Tree, row: dict, gates: list[dict], runs: SavedRuns) -> dict
         res = {"failed": None, "failed_tasks": None, "tasks": len(tasks) or None, "worst": None, "worst_task": None, "margin": None}
         if not isinstance(spec, dict):
             # a box whose scorecard records each gate as one pass/fail: it names no failing task
-            n = (card.get("failed_gates") or {}).get(g["id"])
-            res.update({"failed_tasks": finite(n) if n is not None else (0 if spec is True else None),
+            n = failed_count(card, g["id"])
+            res.update({"failed_tasks": n if n is not None else (0 if spec is True else None),
                         "why_null": "pass/fail gate: the scorecard names no failing task and records no margin"})
             out[g["id"]] = res
             continue
@@ -596,31 +614,72 @@ def gate_results(t: Tree, row: dict, gates: list[dict], runs: SavedRuns) -> dict
     return out
 
 
+DIRECTIONS = {"lower": "lower", "down": "lower", "min": "lower", "minimize": "lower",
+              "higher": "higher", "up": "higher", "max": "higher", "maximize": "higher"}
+
+
+def ranked_split(ledger: list[dict]) -> str | None:
+    """The split a box ranks its solutions on: "dev" when its rows name one (trajectory_tracking_agent, for one),
+    None when its solution rows name no split at all (robot_sdk_agent: every row is one scoring of the live directory, so
+    each row IS the ranking score; the meaning of "dev", the split the population is ranked on, is the same)."""
+    rows = [r for r in ledger if r.get("solution")]
+    if any(r.get("split") == "dev" for r in rows):
+        return "dev"
+    return None
+
+
+def ranks(r: dict, split: str | None) -> bool:
+    """A ledger row that scores a solution on the ranking split."""
+    return bool(r.get("solution")) and (r.get("split") == "dev" if split == "dev" else "split" not in r)
+
+
 def fold_standard(t: Tree) -> tuple[dict, dict]:
     readme = t.text("README.md") or ""
     name = next((l[2:].strip() for l in readme.splitlines() if l.startswith("# ")), Path(t.repo).name)
     status = t.json("status.json") or {}
     obj_doc = objectives(t.text("OBJECTIVES.md") or "")
-    unit = unit_of(obj_doc["name"])
     links = status.get("links") or {}
     kpi = status.get("kpi") or {}
-    objective = {"name": obj_doc["name"], "label": obj_doc["name"], "unit": unit, "direction": obj_doc["direction"],
-                 "ruler": obj_doc["ruler"], "frozen": obj_doc["frozen"],
-                 "target": finite(kpi.get("target")) if (kpi.get("name") or "").startswith(obj_doc["name"] or "\0") else None}
-
     ledger = [json.loads(l) for l in (t.text("ledger.jsonl") or "").splitlines() if l.strip()]
-    ruler = ledger[-1].get("ruler") if ledger else obj_doc["ruler"]
+    split = ranked_split(ledger)
+    # the current ruler is the RANKED split's: its newest row's. WHY (lane ES, from a private box's session): its
+    # live stage moved to ruler v2 while its sim ruler (dev) stayed v1; read from the last row (a live one), the ruler
+    # dropped all 28 dev rows. Live rows never set it (they feed the status KPI's sparkline); holdout is judged on it.
+    ruler = next((r.get("ruler") for r in reversed(ledger) if ranks(r, split)), obj_doc["ruler"])
     first_dev, dev, hold = {}, {}, {}
     for r in ledger:  # append order: the newest row per (solution, split) on the current ruler wins
         sid = r.get("solution")
         if not sid:
             continue
-        if r.get("split") == "dev":
+        if ranks(r, split):
             first_dev.setdefault(sid, r.get("t"))
             if r.get("ruler") == ruler:
                 dev[sid] = r
         elif r.get("split") == "holdout" and r.get("ruler") == ruler:
             hold[sid] = r
+
+    # The objective, from what the box declares, in this order (never guessed: what none of them says stays null):
+    # OBJECTIVES.md's objective line, else its "(the objective)" marker; else the newest ranking scorecard's own
+    # `objective` {name, direction, unit}. The unit: the name's suffix (_mm, _s, …), else status.json's kpi when that kpi
+    # is the objective, else the scorecard's. The direction: OBJECTIVES.md's line, else the scorecard's, else the kpi's,
+    # else "lower" (bb-state/1's default). The target: status.json's kpi, when it is the objective.
+    card_obj: dict = {}
+    if not (obj_doc["name"] and obj_doc["direction"] and unit_of(obj_doc["name"])):
+        newest = next((r["solution"] for r in reversed(ledger) if ranks(r, split) and r.get("ruler") == ruler), None)
+        card = (t.json(f"solutions/{newest}/scorecard.json") or {}) if newest else {}
+        card_obj = card.get("objective") if isinstance(card.get("objective"), dict) else (
+            {"name": card["objective_name"]} if isinstance(card.get("objective_name"), str) else {})
+    obj_name = obj_doc["name"] or (card_obj.get("name") if isinstance(card_obj.get("name"), str) else None)
+    kpi_is_obj = bool(obj_name) and (kpi.get("name") or "").startswith(obj_name)
+    unit = unit_of(obj_name) or (kpi.get("unit") if kpi_is_obj and isinstance(kpi.get("unit"), str) else "") \
+        or (card_obj.get("unit") if isinstance(card_obj.get("unit"), str) else "")
+    direction = obj_doc["direction"] or DIRECTIONS.get(str(card_obj.get("direction")).lower()) \
+        or (DIRECTIONS.get(str(kpi.get("direction")).lower()) if kpi_is_obj else None) or "lower"
+    objective = {"name": obj_name, "label": obj_name, "unit": unit, "direction": direction,
+                 "ruler": obj_doc["ruler"], "frozen": obj_doc["frozen"],
+                 "target": finite(kpi.get("target")) if kpi_is_obj else None,
+                 # the split the objective is ranked on, as the rows name it (CONTRACT §3.1's objective, one field added)
+                 "split": split}
 
     ids = sorted({p.split("/")[1] for p in t.files if re.match(r"^solutions/[^/]+/meta\.json$", p)}, key=natural)
     metas = {sid: t.json(f"solutions/{sid}/meta.json") or {} for sid in ids}
@@ -668,7 +727,7 @@ def fold_standard(t: Tree) -> tuple[dict, dict]:
     if obj_doc["gates"]:
         runs = SavedRuns(t)
         for r in its + ablations:
-            res = gate_results(t, r, obj_doc["gates"], runs)
+            res = gate_results(t, r, obj_doc["gates"], runs, split)
             if res is not None:
                 r["gate_results"] = res
     unscored = [{"id": s, "parent": metas[s].get("parent"), "change": metas[s].get("change"), "created": metas[s].get("created")}
@@ -689,7 +748,7 @@ def fold_standard(t: Tree) -> tuple[dict, dict]:
         kpis.append({"id": "ideas", "label": "Open ideas", "value": open_now, "unit": "", "decimals": 0, "better": "higher",
                      "spark": history, "from": f"ideas.md “I'll try”, over its {len(history)} committed version{'s' if len(history) != 1 else ''}",
                      "delta": None, "tone": "bad" if open_now <= 2 else "neutral", "source": "ideas.md (git history)"})
-    if kpi and not (kpi.get("name") or "").startswith(obj_doc["name"] or "\0"):
+    if kpi and not kpi_is_obj:
         live = [r for r in ledger if r.get("split") == "live"]
         k = {"id": "status_kpi", "label": kpi.get("name"), "value": finite(kpi.get("value")), "unit": kpi.get("unit") or "",
              "decimals": sig_decimals(finite(kpi.get("value"))), "better": "lower" if kpi.get("direction") == "down" else "higher",
@@ -764,8 +823,9 @@ def fold_rc(t: Tree, arm: str) -> tuple[dict, dict]:
         code_commit = {"sha": code, "date": None, "subject": None, "where": "results.json generated.commit"}
     rows = {r["config"]: r for r in res["rows"] if r["arm"] == arm and r["scenario"] == base}
     unit = unit_of(metric)
+    # split: null, its rows are a population graded on one base scenario, not a dev split (CONTRACT §3.1, lane ES)
     objective = {"name": metric, "label": f"{metric} on {base}", "unit": unit, "direction": "lower",
-                 "ruler": res.get("schema"), "frozen": res["generated"].get("date"), "target": None}
+                 "ruler": res.get("schema"), "frozen": res["generated"].get("date"), "target": None, "split": None}
     its = []
     for cfg in res["population"]:
         r = rows.get(cfg["config"])
