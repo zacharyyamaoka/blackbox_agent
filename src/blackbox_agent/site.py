@@ -3,6 +3,8 @@
     <out>/index.html              the stock landing (template/site/index.html), or the box's site/overrides/index.html
     <out>/nav.json                the box's own site/nav.json, else the stock one (the Black box only)
     <out>/data/state.json         the fold of the ref (bb-state/1), the box export's `playback` slice kept
+    <out>/data/files/<path>       each picture a box's .md shows from outside site/, at its path in the box (the notes
+                                  viewer draws a note's pictures from here, and site/ ones from the site)
     <out>/dashboard/              the dashboard: this package's viewer, never a copy in the box
     <out>/overrides/<tag>.js      the box's own version of one stock component, wired in by an import map
     <out>/...                     every other file of the box's site/ at the ref (its tabs, its domain dashboards)
@@ -181,7 +183,7 @@ def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
     who = identity(box, sha)
     record = {"schema": "blackbox-build/1", "package": f"blackbox-agent {__version__}", "box": who["name"],
               "repo": f"{who['owner']}/{who['repo']}" if who["owner"] else who["repo"], "ref": sha,
-              "landing": None, "nav": None, "overrides": [], "dropped": [], "junit": None, "kept": []}
+              "landing": None, "nav": None, "overrides": [], "dropped": [], "junit": None, "kept": [], "carried": []}
     with tempfile.TemporaryDirectory(prefix="blackbox-build-") as tmp:
         root = Path(tmp)
         site = root / "site"
@@ -191,6 +193,12 @@ def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
         if (site / "dashboard").exists():
             shutil.rmtree(site / "dashboard")
             record["dropped"].append("site/dashboard/ (the box's copy of the viewer; this package's replaces it)")
+        # WHY: a note's picture is read from the note's own folder, as GitHub reads it; one under site/ is already in the
+        # site, any other the box tracks is carried here, where viewer/src/core/notes.js (mediaUrl) looks for it
+        from blackbox_agent.lint import named_pictures
+
+        record["carried"] = [p for p in named_pictures(box, sha, set(tracked)) if not p.startswith("site/")]
+        _extract(box, sha, record["carried"], site / "data" / "files")
 
         junit = site / "data" / "junit.xml"
         junit_arg = junit_dir_arg = None

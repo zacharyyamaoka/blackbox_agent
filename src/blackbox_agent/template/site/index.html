@@ -25,6 +25,9 @@
   .top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bb-bg, #fff) 90%, transparent); backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--bb-border, #e4e4e7); }
   .top .wrap { display: flex; align-items: center; gap: 16px; height: 52px; }
+  /* WHY (review 2026-11-25): ?run=…#run scrolled the run's title and verdict under this sticky bar (52 px + its border),
+     leaving only the footer's record id to say which run opened. Any jump to an anchor stops clear of the bar. */
+  html { scroll-padding-top: 64px; }
   .brand { font-weight: 650; color: var(--bb-fg, #18181b); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .top nav { display: flex; gap: 16px; }
   .top nav a { color: var(--bb-muted, #71717a); font-size: 14px; white-space: nowrap; }

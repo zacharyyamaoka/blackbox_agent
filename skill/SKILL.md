@@ -52,6 +52,10 @@ one resumes from `ledger.jsonl`, `solutions/` and `ideas.md` without a handover.
 - **A spec changes with its tests**: when a test starts or stops proving a requirement, edit that
   `specs/<id>-*.md`'s `tests:` in the same commit. Never type a status; the page derives it.
 - **The page may be public**: nothing under `site/` names a home directory, a hostname or a private repo.
+- **A named thing is a link**: a file, folder, repo or note the box's docs name is a link, never bare `code`. The box's
+  own files are relative links (`` [`ideas.md`](ideas.md) ``), a repo is its GitHub URL, and a note or chat only one
+  machine can open is a private root URI. Pictures live inside the box (`site/assets/`), never at `../`. `blackbox
+  check` fails on an unlinked name or a link that lands on nothing, with the fix for each.
 
 ## The page: what the box holds, what the package holds
 

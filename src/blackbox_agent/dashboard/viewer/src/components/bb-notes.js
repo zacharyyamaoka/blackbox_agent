@@ -67,7 +67,8 @@ bb-notes .bb-empty code { font-family: var(--bb-mono); font-size: .92em; }
       head.innerHTML = `<b>${esc(n.file)}</b>${n.changed ? `<span>changed ${esc(String(n.changed).slice(0, 10))}${n.sha ? ` · <span class="bb-mono">${esc(n.sha)}</span>` : ''}</span>` : ''}`;
       this.replaceChildren(head);
       // Obsidian's inline title is the file's name; left off when the note opens with its own heading (said once)
-      this._page = mountNotePage(this, { text: n.text, title: n.title ? '' : String(n.file || '').replace(/\.md$/, '') });
+      // path: its pictures are read from its own folder in the box (core/notes.js mediaUrl)
+      this._page = mountNotePage(this, { text: n.text, title: n.title ? '' : String(n.file || '').replace(/\.md$/, ''), path: n.file || null });
       await this._page.ready;
       this.dataset.drew = 'page';
       return;

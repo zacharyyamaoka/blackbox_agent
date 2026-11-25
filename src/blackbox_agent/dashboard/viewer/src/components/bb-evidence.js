@@ -194,6 +194,15 @@ export class BBEvidence extends BBElement {
     }
   }
 
+  // WHY (review 2026-11-25): with 244 chips the row scrolls sideways, and a deep-linked run's pressed chip sat ~19,000 px
+  // past its visible part. Scroll the ROW only (never scrollIntoView, which would also move the page), centring the chip.
+  showPressedChip() {
+    const row = this.querySelector('.bbe-runs'), chip = row?.querySelector('button[aria-pressed="true"]');
+    if (!row || !chip || row.scrollWidth <= row.clientWidth) return;
+    const r = row.getBoundingClientRect(), c = chip.getBoundingClientRect();
+    row.scrollLeft += c.left - r.left - (row.clientWidth - c.width) / 2;
+  }
+
   note() {
     const s = this.settings, rec = this.rec;
     const notes = [];
@@ -231,6 +240,7 @@ export class BBEvidence extends BBElement {
     }
     this.wire();
     this.chips();
+    this.showPressedChip();
     this.select(this.metricId, { quiet: true });
     this.seek(this.t); // the scene starts where the cursor is (the chosen metric's peak)
   }

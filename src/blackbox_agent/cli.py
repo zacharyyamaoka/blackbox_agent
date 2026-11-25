@@ -24,7 +24,8 @@ def _build(a: argparse.Namespace) -> int:
     print(f"{a.out}: {record['box']} @ {record['ref'][:7]}; landing {record['landing']}, nav.json {record['nav']}, "
           f"overrides: {', '.join(record['overrides']) or 'none'}"
           + (f"; kept {', '.join(record['kept'])} from the committed state.json" if record["kept"] else "")
-          + (f"; dropped {'; '.join(record['dropped'])}" if record["dropped"] else ""))
+          + (f"; dropped {'; '.join(record['dropped'])}" if record["dropped"] else "")
+          + (f"; carried {len(record['carried'])} picture(s) the docs show into data/files/" if record.get("carried") else ""))
     return 0
 
 
@@ -74,14 +75,30 @@ def _new(a: argparse.Namespace) -> int:
     return 0
 
 
+LINT_LISTED = 20  # per lint; `--all` lists every one
+
+
 def _check(a: argparse.Namespace) -> int:
+    import re
+
     from blackbox_agent.box import check
 
     problems, notes = check(Path(a.box), a.ref)
     for n in notes:
         print(f"note: {n}")
+    # WHY capped per lint, with the count: a box new to the lints can have a hundred of one kind, and the first screen
+    # must still show every kind of problem (and the fix for each)
+    by_lint: dict[str, list[str]] = {}
     for p in problems:
-        print(f"PROBLEM: {p}")
+        m = re.match(r"\[([a-z-]+)\] ", p)
+        by_lint.setdefault(m.group(1) if m else "", []).append(p)
+    for lint, found in by_lint.items():
+        shown = found if a.all or not lint else found[:LINT_LISTED]
+        for p in shown:
+            print(f"PROBLEM: {p}")
+        if len(found) > len(shown):
+            print(f"PROBLEM: [{lint}] ... and {len(found) - len(shown)} more ({len(found)} in all; "
+                  f"`blackbox check --all` lists every one)")
     print(f"{len(problems)} problem(s)" if problems else "the box is in the format")
     return 1 if problems else 0
 
@@ -126,9 +143,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--no-git", action="store_true", help="do not git init and commit the skeleton")
     p.set_defaults(run=_new)
 
-    p = sub.add_parser("check", help="is the box in the format, does its site build, what does the package replace")
+    p = sub.add_parser("check", help="is the box in the format (every named file is a link, every relative link lands, "
+                                     "the required paths exist), does its site build, what does the package replace")
     p.add_argument("--box", default=".")
     p.add_argument("--ref", default="HEAD")
+    p.add_argument("--all", action="store_true", help=f"list every lint finding (default: the first {LINT_LISTED} of each)")
     p.set_defaults(run=_check)
 
     p = sub.add_parser("skill", help="print the blackbox loop (the skill: read, propose, evaluate, rebuild, commit)")

@@ -2,7 +2,7 @@
 
 The outside of the black box: what goes in, what comes out, and how a solution is scored. Nothing here says what is
 inside a solution. Changing anything in this file makes **ruler v2**: a new section below, and every solution in
-`solutions/` is re-scored on it. A solution never edits this file or the ruler's code.
+[`solutions/`](solutions/) is re-scored on it. A solution never edits this file or the ruler's code.
 
 ## 1. The black box
 

@@ -18,7 +18,7 @@ uvx --from git+https://github.com/zacharyyamaoka/blackbox_agent@v0 blackbox --he
 | `blackbox build --box <dir> --out <dir>` | folds the box's `HEAD` into `data/state.json`, then writes its whole site: the landing, the dashboard, `nav.json`, its tabs and its other site files |
 | `blackbox serve --box <dir> [--port N]` | the same build, in a temporary folder, served on `127.0.0.1`; its first line is the URL (8765, or a free port when 8765 is busy; a busy `--port` you name fails and says so) |
 | `blackbox new <dir>` | a box skeleton: `OBJECTIVES.md`, `AGENTS.md`, an empty `ledger.jsonl`, `site/nav.json`, the Pages workflow; committed on `main` |
-| `blackbox check --box <dir>` | is the box in the format, does its site build, does every `nav.json` link land on a page, what does the package replace |
+| `blackbox check --box <dir>` | is the box in the format (its required paths, every named file a link, every relative link landing), does its site build, does every `nav.json` link land on a page, what does the package replace |
 | `blackbox skill` | prints the loop (the `blackbox` skill, [`skill/SKILL.md`](skill/SKILL.md)) |
 
 The build reads every box file from git at the ref (`--ref`, default `HEAD`), never the working tree, so the same
@@ -34,6 +34,13 @@ commit builds the same site. It is stdlib + git, with no dependencies, so it run
 | `site/nav.json`, `site/tabs/`, `site/overrides/` | the site build, the Pages workflow, the loop |
 
 A shared update can change how a number looks, never the number: the ruler and the scorer stay in the box.
+
+**A named thing is a link.** A file, folder, repo or note a box's docs name is a link, never bare `code`: relative for
+the box's own files (`` [`ideas.md`](ideas.md) ``), the GitHub URL for a repo, a private root URI for a note or chat
+only one machine can open. `blackbox check` lists each miss as `unlinked-name` or `broken-link` with its file:line and
+the fix (the first 20 of each; `--all` for every one), and `missing-path` for a required file the box lacks
+(`README.md`, `OBJECTIVES.md`, `AGENTS.md`, `PROGRESS.md`, `ledger.jsonl`, `ideas.md`, `REFERENCES.md`, `status.json`,
+`solutions/`). A file the box pins by sha256 (its frozen ruler) is not linted until its next pin.
 
 ## Deploy: six lines in the box
 
@@ -82,6 +89,7 @@ the site's root, so its links are written as from `site/`) and is counted with t
 index.html             the landing: the goal, the progress, "Open the dashboard →" (or the box's site/overrides/index.html)
 nav.json               the site bar on every page (bb-site-nav/1): the box's site/nav.json, or the Black box only
 data/state.json        the fold of the commit (bb-state/1); the box export's `playback` slice is kept
+data/files/<path>      each picture the box's docs show from outside site/ (a note's pictures draw from here and site/)
 dashboard/             the dashboard: the viewer's components, the stock parts they load, the tab templates
 overrides/<tag>.js     the box's own components, wired in by an import map (the dashboard counts them, and the landing)
 blackbox-build.json    what was built from what: this package's version, the box's commit, the overrides

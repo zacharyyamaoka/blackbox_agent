@@ -1,4 +1,6 @@
-"""`blackbox new` (a box skeleton) and `blackbox check` (is this box in the format, and what does the package replace)."""
+"""`blackbox new` (a box skeleton) and `blackbox check` (is this box in the format, and what does the package replace).
+
+The format's lints (a named thing is a link, a relative link lands, the required paths exist) are lint.py."""
 
 from __future__ import annotations
 
@@ -9,6 +11,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from blackbox_agent.lint import lint
 from blackbox_agent.site import PAGES_LINE, PKG, STRAY_LANDING, TEMPLATE, BoxError, build, fill, git, need
 
 SCAFFOLD = PKG / "scaffold"
@@ -17,7 +20,9 @@ SCAFFOLD = PKG / "scaffold"
 RENAME = {"github/workflows/pages.yml": ".github/workflows/pages.yml", "gitignore": ".gitignore"}
 # from the stock template (template/): the README's live-page line and its test, the site bar's file
 FROM_TEMPLATE = ("site/nav.json", "tests/test_readme_landing_link.py")
-HOME_PATH = re.compile(r"/h[o]me/[A-Za-z0-9_.-]+")
+# WHY the lookbehind: a folder named home inside a GitHub URL's path (vibetracks_agent @ ef18c13 links its stock part
+# at …/vibetracks/ + home + /static/…) is a folder of a repo, not a home directory; check read it as 3 home paths
+HOME_PATH = re.compile(r"(?<![\w.-])/h[o]me/[A-Za-z0-9_.-]+")
 REL = re.compile(r"^(?![a-z][a-z0-9+.-]*:)(?!/)(?!.*(?:^|/)\.\.(?:/|$))\S*$", re.I)
 TEXT = {".html", ".js", ".mjs", ".css", ".json", ".jsonl", ".md", ".svg", ".txt", ".xml", ".base", ".csv", ".yml", ".yaml"}
 
@@ -81,9 +86,10 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
             return None
         return git(box, "show", f"{sha}:{path}")
 
-    for path in ("README.md", "OBJECTIVES.md", "ledger.jsonl", "AGENTS.md"):
-        if path not in tracked:
-            problems.append(f"{path} is missing (the format: README.md, OBJECTIVES.md, AGENTS.md, ledger.jsonl)")
+    # the conformance lints (lint.py): missing-path, unlinked-name, broken-link; each finding is one problem
+    findings, lint_notes = lint(box, sha, tracked)
+    problems += [str(f) for f in findings]
+    notes += lint_notes
     objectives_tracked = "OBJECTIVES.md" in tracked
     readme = text("README.md")
     if readme is not None:
