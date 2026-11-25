@@ -158,6 +158,36 @@ def better(a: float, b: float | None, direction: str) -> bool:
     return a < b - tie if direction == "lower" else a > b + tie
 
 
+TIEBREAK_KEYS = ("tiebreak", "tiebreak2", "tiebreak3", "tiebreak4")
+
+
+def tiebreaks(row: dict) -> list:
+    """A ledger row's tie-break values in order (`tiebreak`, `tiebreak2`, …), as far as the row names them."""
+    out = []
+    for k in TIEBREAK_KEYS:
+        if k not in row:
+            break
+        out.append(finite(row.get(k)))
+    return out
+
+
+def outranks(a: float, a_ties: list | None, b: float | None, b_ties: list | None, direction: str) -> bool:
+    """a beats b on the objective, or ties it and wins on the first tie-break that differs.
+    WHY (the Vibe Tracks Agent, 2026-11-25): a box's ruler ranks equal objectives by its tie-breaks (vibetracks_agent:
+    should_failing, then checks_failing); keeping the first to reach the best named the wrong solution on its landing.
+    A missing tie-break never wins: with none, the first to reach the best keeps it, as before."""
+    if better(a, b, direction):
+        return True
+    if b is None or better(b, a, direction):
+        return False
+    for x, y in zip(a_ties or [], b_ties or []):
+        if x is None or y is None:
+            return False
+        if x != y:
+            return x < y if direction == "lower" else x > y
+    return False
+
+
 # ── OBJECTIVES.md ────────────────────────────────────────────────────────────────────────────────────────────────
 def objectives(text: str) -> dict:
     title = next((l.lstrip("# ").strip() for l in text.splitlines() if l.startswith("# ")), "")
@@ -234,9 +264,9 @@ def judge(rows: list[dict], direction: str) -> None:
         obj, ok = r["objective"], r["admissible"]
         if not ok or obj is None:
             r["verdict"] = "failed"
-        elif better(obj, best[1] if best else None, direction):
+        elif outranks(obj, r.get("tiebreaks"), best[1] if best else None, best[2] if best else None, direction):
             r["verdict"] = "kept"
-            best = (r["id"], obj)
+            best = (r["id"], obj, r.get("tiebreaks"))
         else:
             r["verdict"] = "discarded"
         r["best_so_far"] = best[1] if best else None
@@ -710,6 +740,8 @@ def fold_standard(t: Tree) -> tuple[dict, dict]:
                "proposed_by": {"agent": pb.get("agent"), "model": pb.get("model"), "backfilled": bool(pb.get("backfilled"))} if pb else None,
                "failed_gates": fg, "gate_pass_rate": finite(d.get("gate_pass_rate")),
                "holdout": finite((hold.get(sid) or {}).get("objective")), "commit": commit, "best_holder": None}
+        if tiebreaks(d):  # only a box whose rows name tie-breaks gains the field (every other state folds as before)
+            out["tiebreaks"] = tiebreaks(d)
         return gate_columns(out, obj_doc["gates"])
 
     scored = [sid for sid in ids if sid in dev]
