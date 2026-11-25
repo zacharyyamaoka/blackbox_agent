@@ -48,7 +48,17 @@ LINTS = {
     "unlinked-name": "a named file, folder or repo is a link",
     "broken-link": "a relative link lands on a file the box tracks",
     "missing-path": "the format's required paths exist",
+    "home-path": "no tracked text file names a machine's home directory",
 }
+# WHY every tracked file, not only the built site (2026-11-25): trajectory_tracking_agent's public main carried a
+# home path in a .py docstring from a5d5982 while check read only the site. Lifted from that box's own
+# tests/test_no_private_paths.py: a line that defines or names the guard is the one exemption. Machine home paths
+# only (Linux and macOS); a box's other private names are its own test's to forbid. The pattern is spelled so this
+# file never matches itself.
+HOME = re.compile(r"(?<![\w.-])/(?:h[o]me|Us[e]rs)/[A-Za-z][\w.-]*")
+GUARD = re.compile(r"re\.compile\(|FORBIDDEN|PRIVATE|LEAK|HOME_PATH")
+BINARY = re.compile(r"\.(png|jpe?g|gif|webp|bmp|avif|ico|svg|mp4|webm|mov|m4v|ogv|pdf|rrd|npz|npy|gz|zip|whl|"
+                    r"woff2?|ttf|otf|pkl|pt|onnx|bin)$", re.I)
 PICTURE = re.compile(r"\.(png|jpe?g|gif|webp|svg|bmp|avif|mp4|webm|mov|m4v|ogv)$", re.I)
 
 # lifted (test_docs_link_what_they_name.py @ ef18c13); FENCE takes an indented fence too
@@ -225,7 +235,25 @@ def lint(box: Path, sha: str, tracked: set[str]) -> tuple[list[Finding], list[st
         if doc in frozen:
             continue
         findings += doc_findings(doc, docs[doc].decode(errors="replace"), tracked, dirs, sha)
+    findings += home_findings(box, sha, tracked)
     return findings, notes
+
+
+def home_findings(box: Path, sha: str, tracked: set[str]) -> list[Finding]:
+    """A machine's home path in any tracked text file (the box may be public, now or later)."""
+    out: list[Finding] = []
+    texts = blobs(box, sha, sorted(p for p in tracked if not BINARY.search(p)))
+    for path, raw in sorted(texts.items()):
+        try:
+            body = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        for n, line in enumerate(body.splitlines(), start=1):
+            m = HOME.search(line)
+            if m and not GUARD.search(line):
+                out.append(Finding("home-path", f"{path}:{n}", f"names a machine's home directory `{m.group(0)}`",
+                                   "name the repo, or a root the box resolves per machine, instead of the path"))
+    return out
 
 
 def named_pictures(box: Path, sha: str, tracked: set[str]) -> list[str]:
