@@ -9,7 +9,9 @@
     <out>/simreal/index.html      the stock Sim × Real workspace, only when the box's nav.json names it (viewer CONTRACT §21)
     <out>/overrides/<tag>.js      the box's own version of one stock component, wired in by an import map
     <out>/...                     every other file of the box's site/ at the ref (its tabs, its domain dashboards)
-    <out>/blackbox-build.json     what was built from what: the package version, the ref, the overrides
+    <out>/blackbox-sw.js          the site cache (viewer CONTRACT §18.5): the site bar registers it, so a dashboard switch
+                                  asks the server for blackbox-build.json only; its digest names the build
+    <out>/blackbox-build.json     what was built from what: the package version, the ref, the overrides, the digest
 
 The landing is an override like any component (WHY, Zach 2026-11-24 on robot_sdk_agent's hand-written page: "the landing
 page is not like the stock one I designed"): the stock one always builds, and only site/overrides/index.html replaces it,
@@ -23,6 +25,7 @@ peer's in-flight files never ship). The fold runs as its own process (its plug-i
 from __future__ import annotations
 
 import gzip
+import hashlib
 import html
 import io
 import json
@@ -62,6 +65,12 @@ JUNIT_LEAK = re.compile(r"hostname=|/h[o]me/")
 # WHY the label anchors the second form: the same line links github.com/…/blackbox_agent, which is no live page.
 PAGES_LINE = re.compile(r"https://([A-Za-z0-9-]+)\.github\.io/([A-Za-z0-9_.-]+)/"
                         r"|Live landing page\]\(https://[a-z0-9-]+(?:\.[a-z0-9-]+)+/\)")
+# the site cache (viewer CONTRACT §18.5): the worker, copied from the dashboard to the site's root (its scope), and the
+# one line of the site bar's switch the build turns on in its copy. WHY (Zach, 2026-11-25, on TTA's dashboard switcher):
+# "I don't like how long it takes to switch between workspaces.. can you not like cache the result or something?"
+SITE_CACHE_WORKER = "blackbox-sw.js"
+SITE_CACHE_MODULE = Path("dashboard") / "viewer" / "src" / "core" / "site-cache.js"
+SITE_CACHE_LINE = ("export const SITE_CACHE = null;", "export const SITE_CACHE = 'on';")
 IMPORTMAP = re.compile(r'(<script\b[^>]*\btype=["\']importmap["\'][^>]*>)(.*?)(</script>)', re.S | re.I)
 
 
@@ -198,7 +207,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
     record = {"schema": "blackbox-build/1", "package": f"blackbox-agent {__version__}", "box": who["name"],
               "repo": f"{who['owner']}/{who['repo']}" if who["owner"] else who["repo"], "ref": sha,
               "landing": None, "nav": None, "simreal": None, "overrides": [], "dropped": [], "junit": None, "kept": [],
-              "carried": [], "links": None}
+              "carried": [], "links": None, "site_cache": None, "digest": None}
     with tempfile.TemporaryDirectory(prefix="blackbox-build-") as tmp:
         root = Path(tmp)
         site = root / "site"
@@ -281,6 +290,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
         shutil.copytree(need(DASHBOARD, "the dashboard"), site / "dashboard",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         record["simreal"] = _simreal(site, record)
+        _site_cache(site, record)
 
         components = _overrides(site)
         record["overrides"] = sorted(components + ([LANDING] if record["landing"] != "stock" else []))
@@ -289,6 +299,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
         if record["overrides"]:
             _count_overrides(site, record["overrides"])
         (site / ".nojekyll").write_text("")
+        record["digest"] = digest(site)
         (site / RECORD).write_text(json.dumps(record, indent=1) + "\n")
         if here is not None and not (record["links"] or {}).get("mode") == "local":
             # the leak gate: nothing this machine knows privately may be in a public build (WHY refuse, not scrub: a
@@ -306,6 +317,39 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(site, out)
     return record
+
+
+def _site_cache(site: Path, record: dict) -> None:
+    """The site cache: the worker at the site's root, the site bar's registration on in the build's copy. A box's own
+    site/blackbox-sw.js is replaced (the name is the package's) and said so. A dashboard without the worker (a test's stub
+    dashboard) builds a site without the cache, which works as before; record["site_cache"] says which."""
+    source, module = site / "dashboard" / "viewer" / "site" / SITE_CACHE_WORKER, site / SITE_CACHE_MODULE
+    record["site_cache"] = None
+    if not (source.is_file() and module.is_file()):
+        return
+    text = module.read_text()
+    if text.count(SITE_CACHE_LINE[0]) != 1:
+        raise BoxError(f"{SITE_CACHE_MODULE}: no `{SITE_CACHE_LINE[0]}` line to turn on; reinstall the package")
+    worker = site / SITE_CACHE_WORKER
+    if worker.exists():
+        record["dropped"].append(f"site/{SITE_CACHE_WORKER} (the box's own; the package's site cache takes the name)")
+    shutil.copyfile(source, worker)
+    module.write_text(text.replace(*SITE_CACHE_LINE))
+    record["site_cache"] = SITE_CACHE_WORKER
+
+
+def digest(site: Path) -> str:
+    """sha256 over every file of the built site (its path, then its bytes), the record aside: the name of this build.
+    WHY every file: the site cache keeps a build's files until the record changes, and the same commit rebuilt by a newer
+    package, or with other private sources resolved, is another build."""
+    h = hashlib.sha256()
+    for path in sorted(p for p in site.rglob("*") if p.is_file() and p.name != RECORD):
+        rel = path.relative_to(site).as_posix()
+        h.update(rel.encode() + b"\0" + str(path.stat().st_size).encode() + b"\0")
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+    return h.hexdigest()
 
 
 def _simreal(site: Path, record: dict) -> str | None:

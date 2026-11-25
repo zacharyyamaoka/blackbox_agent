@@ -22,11 +22,21 @@ export function ensureKitCss() {
   document.head.appendChild(link);
 }
 
+/** data-ui's resizable side panels ({makeResizable}, data-ui CONTRACT §11): drag, double-click to reset, remembered. */
+export const loadResize = () => load('resize.js');
+
 /** <data-kpi> and <data-sparkline> (views/kpi.js defines both). */
 export async function loadKpi() {
   ensureKitCss();
   await load('views/kpi.js');
   await customElements.whenDefined('data-kpi');
+}
+
+/** One of data-ui's own view modules (`views/<name>.js`), for a host view that extends a stock one (bb-goals.plan.js
+    extends the timeline: the same URL data-ui loads it from, so one module instance). */
+export async function loadKitView(name) {
+  ensureKitCss();
+  return load(`views/${name}.js`);
 }
 
 /** <data-views> and <data-facets> (the core; views load themselves lazily beside it). */

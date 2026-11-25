@@ -35,13 +35,30 @@ bb-ablation .ab-note { border: 1px dashed var(--bb-border); border-radius: calc(
 /* the default layout: proposal 1, data-ui's dashboard (01-data-ui/index.html's .catalog) */
 bb-ablation .ab-wait { font-size: 13px; }
 bb-ablation .ab-lede { color: var(--bb-muted); margin: 0 0 12px; max-width: 110ch; font-size: 14px; }
-bb-ablation .ab-dash { display: grid; grid-template-columns: 228px minmax(0, 1fr); gap: 12px; align-items: start; }
-bb-ablation .ab-dash > data-facets { max-height: 780px; overflow: auto; min-width: 0; }
+/* Fill the container (proposals-ablation-layout 01, Zach's pick 2026-11-25: "it expands to fill the div its in"): the page
+   holding the study drops its 1200 px cap, the rail keeps its own width (data-ui's splitter: drag, double-click resets,
+   remembered) and the views take the rest, as tall as the window under them (drawDashboard sets --data-height).
+   WHY !important: bb-page writes its cap as an inline max-width */
+bb-page.bb-el:has(> .bbp > section.bb-section > bb-ablation) { max-width: none !important; }
+bb-ablation .ab-dash { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; }
+bb-ablation .ab-dash > data-facets { width: var(--data-panel-width, 240px); max-height: var(--data-height, 780px); overflow: auto; min-width: 0; }
 bb-ablation .ab-dash > data-views { min-width: 0; min-height: 520px; --data-height: 780px; } /* WHY no display: data-views is data-ui's flex column */
-bb-ablation[data-w="phone"] .ab-dash, bb-ablation[data-w="mid"] .ab-dash { grid-template-columns: minmax(0, 1fr); }
-bb-ablation[data-w="phone"] .ab-dash > data-facets, bb-ablation[data-w="mid"] .ab-dash > data-facets { max-height: none; }
-bb-ablation[data-w="phone"] .ab-dash > data-views { --data-height: 640px; }
-bb-ablation .dv-ablation { padding: 12px; overflow: auto; min-width: 0; }
+/* phone: one column; data-ui's rail is its own collapsed "Filter" summary there (stock), so it costs one line */
+bb-ablation[data-w="phone"] .ab-dash { grid-template-columns: minmax(0, 1fr); }
+bb-ablation[data-w="phone"] .ab-dash > data-facets { width: auto; max-height: none; }
+bb-ablation .dv-ablation { padding: 12px; overflow: auto; min-width: 0; position: relative; }
+/* recomputing from the filtered rows: a small spinner over the old drawing, which dims (Zach: "as if they are buffering
+   then it can show like a little spinner") */
+bb-ablation .dv-ablation > .ab-spin { display: none; position: absolute; top: 10px; right: 14px; z-index: 3; align-items: center; gap: 8px;
+  padding: 4px 10px 4px 6px; border-radius: 999px; background: var(--bb-bg); border: 1px solid var(--bb-border); font-size: 12px; color: var(--bb-muted);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--bb-fg) 12%, transparent); }
+bb-ablation .dv-ablation > .ab-spin > i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--bb-rule); border-top-color: var(--bb-accent);
+  animation: ab-spin .7s linear infinite; }
+bb-ablation .dv-ablation.computing > .ab-spin { display: inline-flex; }
+bb-ablation .dv-ablation.computing > .av, bb-ablation .dv-ablation.computing > div:not(.ab-spin) { opacity: .45; transition: opacity .12s; }
+@keyframes ab-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { bb-ablation .dv-ablation > .ab-spin > i { animation-duration: 2.4s; } }
+bb-ablation .ab-empty-filter { margin: 24px 4px; color: var(--bb-muted); font-size: 14px; max-width: 70ch; }
 bb-ablation .ab-status { margin: 10px 0 0; }
 
 /* 04's story card */

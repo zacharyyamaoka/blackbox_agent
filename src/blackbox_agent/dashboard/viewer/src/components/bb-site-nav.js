@@ -32,6 +32,15 @@ import { GITHUB, GEAR } from '../core/icons.js';
 import { BBNav } from './bb-nav.js';
 import { makeModel, locate, foldOrder, switcherMenu } from './bb-site-nav.model.js';
 import schema from './bb-site-nav.schema.js';
+import { registerSiteCache } from '../core/site-cache.js';
+
+// the site cache (CONTRACT §18.5, viewer/site/blackbox-sw.js): every page of a built site has this bar, so the bar
+// registers it, once the page has loaded (its install never competes with the page's own requests). Off outside a
+// `blackbox build` site. WHY (Zach, 2026-11-25): "I don't like how long it takes to switch between workspaces"
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  if (document.readyState === 'complete') registerSiteCache();
+  else window.addEventListener('load', () => registerSiteCache(), { once: true });
+}
 
 const svg = (d, extra = '') => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
 /** The dashboards' icons (lane NAV's, proposals-nav/_shared/nav-styles.js): drawn here, nothing fetched. */

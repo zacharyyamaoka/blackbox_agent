@@ -9,8 +9,9 @@
    - a solution id opens through the element's bb-open, never a link into the box's repo;
    - calm colours: the focus highlight is the accent, not amber; a cost going up is a neutral chip.
 
-   mountView(kind, host, S, env, opts) -> {redraw(), focus(key), setRows(ids|null)} (setRows: the rows a filter rail leaves)
-   opts: {compact: no controls (a small tile), head: false = no title row, focus: a part key, pairsFirst (importance)}
+   mountView(kind, host, S, env, opts) -> {redraw(), focus(key), state} (a filter remounts the view over narrowStudy's slice,
+   handing the old `state` back as opts.state, so its controls stay where the reader left them)
+   opts: {compact: no controls (a small tile), head: false = no title row, focus: a part key, pairsFirst (importance), state}
    env:  {tip(event, html|null), sol(id) -> html, open(id), pick(key), observe(ResizeObserver), uid(prefix)} */
 import { esc, fmtV, times, pct, signed, fmtCost, STILL_PAYS, RELEARNED } from './bb-ablation.model.js';
 
@@ -92,7 +93,7 @@ function openable(env, node, id) {
 function remix(host, S, env, opts) {
   const { D, order } = S;
   const U = S.unit;
-  const state = { kind: 'all', sort: 'objective', filter: {}, remix: new Set(order), focus: opts.focus || null, only: null };
+  const state = { kind: 'all', sort: 'objective', filter: {}, remix: new Set(order), focus: opts.focus || null, ...opts.state };
   const q = frame(host, opts, env, {
     title: 'Remix', question: 'What is the best combination?',
     controls: opts.compact ? '' : `<span class="label">Rows</span>${seg('kind', [['all', 'all measured'], ['ends', 'one part in or out'], ['path', 'the path']])}
@@ -110,8 +111,7 @@ function remix(host, S, env, opts) {
     let list = D.variants.filter((v) => v.measured && v.objective);
     const seen = new Set();
     list = list.filter((v) => (seen.has(v.solution) ? false : seen.add(v.solution)));
-    if (state.only) list = list.filter((v) => state.only.has(v.solution));
-    if (state.kind === 'ends') list = list.filter((v) => ['leave-one-out', 'add-one-in', 'base', 'target'].includes(v.kind) || v.keeps.length === 1 || v.keeps.length === order.length - 1);
+        if (state.kind === 'ends') list = list.filter((v) => ['leave-one-out', 'add-one-in', 'base', 'target'].includes(v.kind) || v.keeps.length === 1 || v.keeps.length === order.length - 1);
     if (state.kind === 'path') list = list.filter((v) => v.step || v.kind === 'base');
     for (const [k, f] of Object.entries(state.filter)) {
       if (f === 'in') list = list.filter((v) => v.keeps.includes(k));
@@ -221,7 +221,7 @@ function remix(host, S, env, opts) {
   remixPanel();
   host._redraw = draw;
   draw();
-  return { redraw: draw, focus(k) { state.focus = k; draw(); }, setRows(ids) { state.only = ids ? new Set(ids) : null; draw(); } };
+  return { redraw: draw, focus(k) { state.focus = k; draw(); }, state };
 }
 
 // ── Waterfall: one bar per step from the base to the target, greedy path or as searched ─────────────────────────────
@@ -229,7 +229,7 @@ function waterfall(host, S, env, opts) {
   const { D } = S;
   const U = S.unit;
   const costs = D.costs || [];
-  const state = { order: 'greedy', scale: 'log', cost: costs[0] ? costs[0].key : null, focus: opts.focus || null, only: null };
+  const state = { order: 'greedy', scale: 'log', cost: costs[0] ? costs[0].key : null, focus: opts.focus || null, ...opts.state };
   const q = frame(host, opts, env, {
     title: 'Waterfall', question: 'How did we get here?',
     controls: opts.compact ? '' : `<span class="label">Order</span>${seg('order', [['greedy', 'what helps most first'], ['history', 'as searched']])}
@@ -253,8 +253,10 @@ function waterfall(host, S, env, opts) {
       const prev = D.history[i - 1];
       const c = h.component && S.comp[h.component];
       const partial = c && c.introduced_by.length > 1 && c.introduced_by.indexOf(h.solution) < c.introduced_by.length - 1;
-      out.push({ label: c ? `+ ${c.name}${partial ? ' (first half)' : c.introduced_by.length > 1 ? ' (second half)' : ''}` : '= refactor (no component)',
-        keys: h.component ? [h.component] : [], solution: h.solution, from: prev.objective, to: h.objective, note: h.change, cost: (k) => delta(h.solution, prev.solution, k) });
+      // narrowStudy: a step over a filtered-out lineage solution adds several parts at once (h.added)
+      const several = !c && h.added && h.added.length > 1;
+      out.push({ label: c ? `+ ${c.name}${partial ? ' (first half)' : c.introduced_by.length > 1 ? ' (second half)' : ''}` : several ? `+ ${h.added.map(S.name).join(' + ')}` : '= refactor (no component)',
+        keys: h.component ? [h.component] : several ? h.added : [], solution: h.solution, from: prev.objective, to: h.objective, note: h.change, cost: (k) => delta(h.solution, prev.solution, k) });
     });
     return out;
   }
@@ -271,6 +273,14 @@ function waterfall(host, S, env, opts) {
   function label(svg, i, text, value, phone, labelW, yOf, barH, W, strong, solution) {
     const y = phone ? yOf(i) - 6 : yOf(i) + barH / 2 + 4;
     const t = el('text', { x: phone ? 8 : labelW, y, 'text-anchor': phone ? 'start' : 'end', 'font-size': 13, class: strong ? 'ink' : '', 'font-weight': strong ? 600 : 400 }, svg, text);
+    // WHY an explicit ellipsis + the full text as a tooltip: a recomputed step can add several parts at once, longer than
+    // the label column (truthful rendering: never clip silently)
+    const room = phone ? W - 90 : labelW - 6;
+    if (t.getComputedTextLength && t.getComputedTextLength() > room) {
+      let s = text;
+      while (s.length > 4 && t.getComputedTextLength() > room) { s = s.slice(0, -2); t.textContent = `${s.trimEnd()}…`; }
+      el('title', {}, t, text);
+    }
     el('text', { x: W - 8, y, 'text-anchor': 'end', 'font-size': 12.5, class: 'ink' }, svg, value);
     if (solution && !phone && !opts.compact) openable(env, el('text', { x: labelW, y: y + 13, 'text-anchor': 'end', 'font-size': 10.5, class: 'sol' }, svg, solution), solution);
     return t;
@@ -306,7 +316,7 @@ function waterfall(host, S, env, opts) {
       const i = k + 1;
       const focus = state.focus && r.keys.includes(state.focus);
       if (focus) el('rect', { x: 0, y: top + i * rowH, width: W, height: rowH, fill: 'var(--ab-hl)', 'data-focus': '1' }, svg);
-      const dim = (state.focus && !focus) || (state.only && !state.only.has(r.solution));
+      const dim = state.focus && !focus;
       const change = r.to / r.from - 1;
       const colour = Math.abs(change) < 0.005 ? 'var(--ab-faint)' : change < 0 ? 'var(--bb-good)' : 'var(--bb-bad)';
       const a = Math.min(x(r.from), x(r.to)), b = Math.max(x(r.from), x(r.to));
@@ -323,7 +333,9 @@ function waterfall(host, S, env, opts) {
       svg.appendChild(t); // WHY: the label stays clickable above the hover rect
     });
     const exact = path.filter((p) => p.exact).map((p) => p.step), guided = path.filter((p) => !p.exact).map((p) => p.step);
-    q('.note').textContent = state.order === 'greedy'
+    q('.note').textContent = D.narrowed && state.order === 'greedy'
+      ? `Recomputed from the ${D.narrowed.rows} rows the filter leaves: from ${D.study.base} (fewest parts) towards ${D.study.target} (most parts), each step adds the part that lowers the error most among them.${s.length && s[s.length - 1].solution !== D.study.target ? ` The kept rows stop at ${s[s.length - 1].solution}.` : ''}`
+      : state.order === 'greedy'
       ? `Every step is a measured solution.${guided.length ? ` Step${guided.length === 1 ? '' : 's'} ${guided.join(', ')} ${guided.length === 1 ? 'was' : 'were'} picked on a surrogate (Biedenkapp et al. 2017)` : ''}${exact.length ? `${guided.length ? ';' : ''} step${exact.length === 1 ? '' : 's'} ${exact.join(', ')} compared every candidate` : ''}.`
       : 'As searched: the agent\'s own order, with half-steps (a part found over two solutions) and any step that changed no part.';
     summary();
@@ -332,20 +344,22 @@ function waterfall(host, S, env, opts) {
   syncs.forEach((f) => f());
   host._redraw = draw;
   draw();
-  return { redraw: draw, focus(k) { state.focus = k; draw(); }, setRows(ids) { state.only = ids ? new Set(ids) : null; draw(); } };
+  return { redraw: draw, focus(k) { state.focus = k; draw(); }, state };
 }
 
 // ── Importance at both ends: leave-one-out (frozen, refit) beside add-one-in, the Shapley estimate, measured pairs ──
 function importance(host, S, env, opts) {
   const { D, O } = S;
-  const state = { sort: 'without', refit: 'frozen', focus: opts.focus || null };
+  const state = { sort: 'without', refit: 'frozen', focus: opts.focus || null, ...opts.state };
+  const est = !!O && O.estimates !== false; // the surrogate's estimates step aside while a filter is on (narrowStudy)
+  if (!est && state.sort === 'shapley') state.sort = 'without';
   const q = frame(host, opts, env, {
     title: 'Importance at both ends', question: 'What is each part worth, removed from the best and added alone?',
-    controls: opts.compact ? '' : `<span class="label">Sort by</span>${seg('sort', [['without', 'removing it from the best'], ['alone', 'adding it alone'], ...(O ? [['shapley', 'fair share (estimate)']] : [])])}
+    controls: opts.compact ? '' : `<span class="label">Sort by</span>${seg('sort', [['without', 'removing it from the best'], ['alone', 'adding it alone'], ...(est ? [['shapley', 'fair share (estimate)']] : [])])}
       <span class="label">Removal</span>${seg('refit', [['frozen', 'frozen'], ['both', 'frozen + refit']])}`,
     body: `${opts.pairsFirst ? '<div class="card pairs" style="margin-bottom:12px"></div>' : ''}<div class="card"><div class="av-chart chart"></div><div class="legend av-note">
       <span><i style="background:var(--ab-s1)"></i>removed from the best, frozen</span><span><i style="background:var(--ab-s2)"></i>removed, then refit</span>
-      <span><i style="background:var(--ab-s3)"></i>added alone to the base</span>${O ? `<span><i style="background:var(--ab-est);border-radius:50%"></i>fair share (Shapley) ${ESTIMATE}</span>` : ''}</div></div>`,
+      <span><i style="background:var(--ab-s3)"></i>added alone to the base</span>${est ? `<span><i style="background:var(--ab-est);border-radius:50%"></i>fair share (Shapley) ${ESTIMATE}</span>` : ''}</div></div>`,
     extra: opts.pairsFirst ? '' : '<div class="card pairs" style="margin-top:12px"></div>',
   });
   function rows() {
@@ -353,6 +367,7 @@ function importance(host, S, env, opts) {
     return [...D.components].sort((a, b) => k(a) - k(b));
   }
   function verdict(c) {
+    if (c.without_factor == null && c.alone_factor == null) return 'not in the filtered rows';
     if (c.without_refit_factor != null && c.without_refit_factor < RELEARNED) return 're-learned by a refit';
     if (c.without_refit_factor != null) return 'still pays after a refit';
     if (c.without_factor > 1.25 * c.alone_factor) return 'pays more with the others';
@@ -362,7 +377,7 @@ function importance(host, S, env, opts) {
   function domain() {
     const vals = [1];
     for (const c of D.components) for (const v of [c.without_factor, c.without_refit_factor, c.alone_factor]) if (v != null && v > 0) vals.push(v);
-    if (O) for (const p of O.parts) vals.push(10 ** (p.shapley - p.shapley_se), 10 ** (p.shapley + p.shapley_se));
+    if (est) for (const p of O.parts) vals.push(10 ** (p.shapley - p.shapley_se), 10 ** (p.shapley + p.shapley_se));
     return [Math.min(0.5, Math.min(...vals) * 0.8), Math.max(2, Math.max(...vals) * 1.25)];
   }
   function draw() {
@@ -411,7 +426,7 @@ function importance(host, S, env, opts) {
       });
       // WHY the overall table's Shapley, not the components' shapley_factor: the same number, plus its jackknife error
       const p = S.part[c.key];
-      if (!p) return;
+      if (!p || !est) return;
       const sv = 10 ** p.shapley, l = 10 ** (p.shapley - p.shapley_se), r = 10 ** (p.shapley + p.shapley_se);
       const clamp = (v) => Math.min(hi / 1.04, Math.max(lo * 1.04, v));
       const cy = y + (bars * (barH + gap)) / 2 - 1;
@@ -437,7 +452,7 @@ function importance(host, S, env, opts) {
   syncs.forEach((f) => f());
   host._redraw = draw;
   draw();
-  return { redraw: draw, focus(k) { state.focus = k; draw(); }, setRows() { /* per part: a row filter does not apply */ } };
+  return { redraw: draw, focus(k) { state.focus = k; draw(); }, state };
 }
 
 // ── Cost frontier: error against each cost with the Pareto front; a path through cost space ─────────────────────────
@@ -447,7 +462,7 @@ function frontier(host, S, env, opts) {
   const { D } = S;
   const U = S.unit;
   const costs = D.costs || [];
-  const state = { axis: costs[0] ? costs[0].key : 'all', show: 'study', path: 'lineage', focus: opts.focus || null, only: null };
+  const state = { axis: costs[0] ? costs[0].key : 'all', show: 'study', path: 'lineage', focus: opts.focus || null, ...opts.state };
   const arrow = env.uid('arrow');
   const q = frame(host, opts, env, {
     title: 'Cost frontier', question: `What did each ${U || 'unit of error'} cost?`,
@@ -468,7 +483,6 @@ function frontier(host, S, env, opts) {
     for (const v of D.variants) if (v.measured && v.objective) study.set(v.solution, { ...v, group: historyIds.has(v.solution) ? 'lineage' : 'ablation' });
     for (const h of D.history) if (h.objective) study.set(h.solution, { ...(study.get(h.solution) || {}), ...h, group: 'lineage' });
     let list = [...study.values()];
-    if (state.only) list = list.filter((p) => state.only.has(p.solution));
     if (state.show === 'population') for (const p of D.population || []) if (!study.has(p.solution) && p.objective) list.push({ ...p, group: 'other' });
     return list.filter((p) => p.admissible !== false);
   }
@@ -575,14 +589,14 @@ function frontier(host, S, env, opts) {
   syncs.forEach((f) => f());
   host._redraw = draw;
   draw();
-  return { redraw: draw, focus(k) { state.focus = k; draw(); }, setRows(ids) { state.only = ids ? new Set(ids) : null; draw(); } };
+  return { redraw: draw, focus(k) { state.focus = k; draw(); }, state };
 }
 
 // ── Changelog: the search condensed, one card per part: when it was found, and removing it today ────────────────────
 function changelog(host, S, env, opts) {
   const { D } = S;
   const U = S.unit;
-  const state = { mode: 'condensed', order: 'search', focus: opts.focus || null, only: null };
+  const state = { mode: 'condensed', order: 'search', focus: opts.focus || null, ...opts.state };
   const q = frame(host, opts, env, {
     title: 'Changelog', question: 'Which steps mattered, and do they still?',
     controls: opts.compact ? '' : `<span class="label">Show</span>${seg('mode', [['condensed', 'net improvements'], ['all', 'everything tried']])}
@@ -639,7 +653,6 @@ function changelog(host, S, env, opts) {
       const k = c.key && S.comp[c.key];
       const card = document.createElement('div');
       card.className = `card step${c.kept ? '' : ' filtered'}${state.focus && c.key === state.focus ? ' focus' : ''}`;
-      if (state.only && !c.ids.some((x) => state.only.has(x))) card.style.opacity = 0.45;
       if (c.key) card.dataset.key = c.key;
       const title = k ? `+ ${esc(k.name)}` : Math.abs(c.change) > SAME ? esc(c.to.change) : '= refactor, no part changed';
       const a = Math.min(pos(c.fromV), pos(c.toV)), b = Math.max(pos(c.fromV), pos(c.toV));
@@ -678,19 +691,21 @@ function changelog(host, S, env, opts) {
   const syncs = segs(q, state, ['mode', 'order'], () => draw());
   syncs.forEach((f) => f());
   draw();
-  return { redraw: draw, focus(k) { state.focus = k; draw(); }, setRows(ids) { state.only = ids ? new Set(ids) : null; draw(); } };
+  return { redraw: draw, focus(k) { state.focus = k; draw(); }, state };
 }
 
 // ── Overall importance: every statistic of "how much did this part matter", measured beside estimated ──────────────
 function overall(host, S, env, opts) {
   const { O } = S;
-  if (!O) { host.innerHTML = '<p class="small muted">The study has no overall importance table.</p>'; return { redraw() {}, focus() {}, setRows() {} }; }
-  const state = { sort: 'orders', basis: 'all', focus: opts.focus || null };
+  if (!O) { host.innerHTML = '<p class="small muted">The study has no overall importance table.</p>'; return { redraw() {}, focus() {}, state: {} }; }
+  const hasEst = O.estimates !== false; // narrowStudy: no estimate for a subset of the measured sets
+  const state = { sort: 'orders', basis: hasEst ? 'all' : 'measured', focus: opts.focus || null, ...opts.state };
+  if (!hasEst) { state.basis = 'measured'; if (state.sort === 'shapley') state.sort = 'orders'; }
   const q = frame(host, opts, env, {
     title: 'Overall importance', question: `How much of the ${times(O.total_factor)} is each part's, by every standard measure?`,
-    controls: opts.compact ? '' : `<span class="label">Sort by</span>${seg('sort', [['orders', 'measured orders'], ['shapley', 'Shapley (estimate)'], ['loo', 'removed from the best'], ['aoi', 'added alone']])}
-      <span class="label">Show</span>${seg('basis', [['measured', 'measured only'], ['all', '+ estimates']])}`,
-    body: `<div class="card"><div class="av-chart chart"></div><div class="legend av-note">
+    controls: opts.compact ? '' : `<span class="label">Sort by</span>${seg('sort', [['orders', 'measured orders'], ...(hasEst ? [['shapley', 'Shapley (estimate)']] : []), ['loo', 'removed from the best'], ['aoi', 'added alone']])}
+      ${hasEst ? `<span class="label">Show</span>${seg('basis', [['measured', 'measured only'], ['all', '+ estimates']])}` : '<span class="small muted">Estimates step aside while a filter is on: the surrogate was fitted to the whole study.</span>'}`,
+    body: `<div class="card"><div class="av-chart chart"></div><p class="small muted off" style="margin:4px 0 0"></p><div class="legend av-note">
         <span><i style="background:var(--bb-fg);border-radius:50%"></i>average over the ${O.measured_orders} measured orders ${MEASURED}</span>
         <span><i style="background:var(--ab-grid);height:6px;vertical-align:1px"></i>its range over those orders</span>
         <span><i style="background:var(--ab-s3);width:4px"></i>added alone</span><span><i style="background:var(--ab-s1);width:4px"></i>removed from the best</span>
@@ -704,14 +719,19 @@ function overall(host, S, env, opts) {
     h.innerHTML = '';
     const est = state.basis === 'all';
     host.querySelector('.est-legend').style.display = est ? '' : 'none';
-    const list = [...O.parts].sort((a, b) => val(b, state.sort) - val(a, state.sort));
+    // a part outside the filtered ends (or on no kept order) has no measured share: it is named under the chart, not drawn
+    const drawn = (p) => p.orders != null || p.loo != null || p.aoi != null;
+    const list = [...O.parts].filter(drawn).sort((a, b) => (val(b, state.sort) ?? -Infinity) - (val(a, state.sort) ?? -Infinity));
+    const off = O.parts.filter((p) => !drawn(p));
+    q('.off').textContent = [!O.measured_orders ? 'No measured order runs one part at a time from the filtered rows\' bottom to their top: only removed-from-the-best and added-alone are drawn.' : '',
+      off.length ? `Not drawn: ${off.map((p) => p.name).join(', ')} (no kept row adds or removes it alone).` : ''].filter(Boolean).join(' ');
     const W = h.clientWidth || 900, phone = W < 600;
     const labelW = phone ? 0 : 200, valueW = phone ? 0 : 210;
     const rowH = phone ? 46 : opts.compact ? 26 : 34, top = 24, bottom = 40;
     const H = top + list.length * rowH + bottom;
     const svg = el('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Share of the total improvement per part, by method' }, h);
     const x0 = labelW + 12, x1 = W - valueW - 12;
-    const shares = list.flatMap((p) => [p.orders_min, p.orders_max, p.loo, p.aoi, ...(est ? [p.shapley - p.shapley_se, p.shapley + p.shapley_se] : [])]).map((d) => d / O.total_drop);
+    const shares = list.flatMap((p) => [p.orders_min, p.orders_max, p.loo, p.aoi, ...(est ? [p.shapley - p.shapley_se, p.shapley + p.shapley_se] : [])]).filter((d) => d != null).map((d) => d / O.total_drop);
     const lo = Math.min(-0.05, ...shares), hi = Math.max(0.5, ...shares);
     const x = linScale(lo, hi * 1.02, x0, x1);
     for (const t of x.ticks(phone ? 4 : 8)) {
@@ -727,24 +747,24 @@ function overall(host, S, env, opts) {
         'font-weight': state.focus === p.key ? 600 : 400, 'data-part': p.key }, svg, p.name);
       pickable(env, t, p.key);
       const s = (d) => x(d / O.total_drop);
-      el('line', { x1: s(p.orders_min), x2: s(p.orders_max), y1: cy, y2: cy, stroke: 'var(--ab-grid)', 'stroke-width': 7, 'stroke-linecap': 'round' }, svg);
-      el('line', { x1: s(p.aoi), x2: s(p.aoi), y1: cy - 8, y2: cy + 8, stroke: 'var(--ab-s3)', 'stroke-width': 3 }, svg);
-      el('line', { x1: s(p.loo), x2: s(p.loo), y1: cy - 8, y2: cy + 8, stroke: 'var(--ab-s1)', 'stroke-width': 3 }, svg);
+      if (p.orders != null) el('line', { x1: s(p.orders_min), x2: s(p.orders_max), y1: cy, y2: cy, stroke: 'var(--ab-grid)', 'stroke-width': 7, 'stroke-linecap': 'round' }, svg);
+      if (p.aoi != null) el('line', { x1: s(p.aoi), x2: s(p.aoi), y1: cy - 8, y2: cy + 8, stroke: 'var(--ab-s3)', 'stroke-width': 3 }, svg);
+      if (p.loo != null) el('line', { x1: s(p.loo), x2: s(p.loo), y1: cy - 8, y2: cy + 8, stroke: 'var(--ab-s1)', 'stroke-width': 3 }, svg);
       if (est) {
         el('line', { x1: s(p.shapley - p.shapley_se), x2: s(p.shapley + p.shapley_se), y1: cy + 7, y2: cy + 7, stroke: 'var(--ab-est)', 'stroke-width': 1.5 }, svg);
         el('circle', { cx: s(p.shapley), cy: cy + 7, r: 4.5, fill: 'var(--bb-bg)', stroke: 'var(--ab-est)', 'stroke-width': 2 }, svg);
       }
-      el('circle', { cx: s(p.orders), cy, r: 5, fill: 'var(--bb-fg)' }, svg);
+      if (p.orders != null) el('circle', { cx: s(p.orders), cy, r: 5, fill: 'var(--bb-fg)' }, svg);
       if (!phone) el('text', { x: W - 6, y: cy + 4, 'text-anchor': 'end', 'font-size': 12, class: 'ink' }, svg,
         `${S.share(p.orders, 1)}${est ? `  ·  est ${S.share(p.shapley, 0)} ±${S.share(p.shapley_se, 0).replace('−', '')}` : ''}`);
       else el('text', { x: W - 6, y: y + 14, 'text-anchor': 'end', 'font-size': 11.5, class: 'ink' }, svg, `${S.share(p.orders, 1)}${est ? ` · est ${S.share(p.shapley)}` : ''}`);
       const hit = el('rect', { x: x0, y: phone ? y + 18 : y, width: Math.max(10, x1 - x0), height: phone ? rowH - 18 : rowH, fill: 'transparent' }, svg);
       svg.appendChild(t); // WHY: the label stays clickable above the hover rect
       hover(env, hit, () => `<b>${esc(p.name)}</b><br>${MEASURED} average over ${O.measured_orders} measured orders: <b>${S.share(p.orders, 1)}</b>
-        (range ${S.share(p.orders_min)} to ${S.share(p.orders_max)})<br>added alone to the base: ${S.share(p.aoi, 1)} (${times(10 ** p.aoi)} better)<br>
-        removed from the best: ${S.share(p.loo, 1)} (${times(10 ** p.loo)} worse)${p.loo_refit != null ? `; after a refit ${times(10 ** p.loo_refit)}` : ''}<br>
-        its greedy-path step: ${S.share(p.path, 1)}<br>${ESTIMATE} Shapley ${S.share(p.shapley, 1)} ± ${S.share(p.shapley_se, 1).replace('−', '')} ·
-        fANOVA main effect ${(100 * p.main).toFixed(1)} % ± ${(100 * p.main_se).toFixed(1)} of the variance`);
+        (range ${S.share(p.orders_min)} to ${S.share(p.orders_max)})<br>added alone to the base: ${p.aoi == null ? 'not in the kept rows' : `${S.share(p.aoi, 1)} (${times(10 ** p.aoi)} better)`}<br>
+        removed from the best: ${p.loo == null ? 'not in the kept rows' : `${S.share(p.loo, 1)} (${times(10 ** p.loo)} worse)`}${p.loo_refit != null ? `; after a refit ${times(10 ** p.loo_refit)}` : ''}<br>
+        its greedy-path step: ${S.share(p.path, 1)}${p.shapley == null ? '' : `<br>${ESTIMATE} Shapley ${S.share(p.shapley, 1)} ± ${S.share(p.shapley_se, 1).replace('−', '')} ·
+        fANOVA main effect ${(100 * p.main).toFixed(1)} % ± ${(100 * p.main_se).toFixed(1)} of the variance`}`);
     });
     sums(); fanova();
   }
@@ -758,6 +778,7 @@ function overall(host, S, env, opts) {
       [`measured orders (${O.measured_orders}), averaged`, Sm.orders, 'measured', 'adds up exactly, by construction'],
       [`Shapley over all ${O.all_sets} sets`, Sm.shapley, 'estimate', `adds up exactly; ${unmeasured} sets from the surrogate`],
     ];
+    for (let i = rowsS.length - 1; i >= 0; i--) if (rowsS[i][1] == null) rowsS.splice(i, 1); // narrowStudy: nothing measured for it
     const maxv = Math.max(...rowsS.map((r) => r[1]));
     const w = O.convexity && O.convexity.worst;
     const step = (d) => (d >= 0 ? `${times(10 ** d)} better` : `${times(10 ** -d)} worse`);
@@ -793,7 +814,7 @@ function overall(host, S, env, opts) {
   syncs.forEach((f) => f());
   host._redraw = draw;
   draw();
-  return { redraw: draw, focus(k) { state.focus = k; draw(); }, setRows() { /* per part: a row filter does not apply */ } };
+  return { redraw: draw, focus(k) { state.focus = k; draw(); }, state };
 }
 
 const MOUNT = { remix, waterfall, importance, frontier, changelog, overall };

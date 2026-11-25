@@ -40,6 +40,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _goals_format as fmt  # noqa: E402
+import _goals_track as track  # noqa: E402
 
 AFTER = ("spec", "ideas")
 BUFFERS = {"x2": 2.0, "x1": 1.0}
@@ -317,9 +318,10 @@ def fold(facts: dict) -> dict | None:
         r["plan"] = "; ".join(f"{gid} · step {order[gid][iid]} of {len(order[gid])}" for gid in gs) or "no goal"
     state["kpis"] = (state.get("kpis") or []) + hit_kpis(out)
     obj = state["objective"]
+    counts = {**{g["id"]: sum(1 for r in rows if g["id"] in r["goal"]) for g in goals}, "none": sum(1 for r in rows if not r["goal"])}
+    # round 2's tracking (CONTRACT §25): last, once the ideas rows carry their goal fields (a step's bet is its idea's)
+    track.enrich(out, rows, as_of, counts, obj.get("name") or "the objective")
     return {"schema": "bb-goals/1", "from": "goals/*.md + ideas.md (- Goal: / - Effort: / - Expect:)", "as_of": as_of,
             "clock": "fixture" if facts.get("as_of") else "the ref's commit time", "buffer": core.BUFFER,
             "objective": {"name": obj.get("name"), "unit": obj.get("unit"), "direction": obj.get("direction"), "ruler": obj.get("ruler")},
-            "pace": pace, "goals": out, "problems": problems,
-            "counts": {**{g["id"]: sum(1 for r in rows if g["id"] in r["goal"]) for g in goals},
-                       "none": sum(1 for r in rows if not r["goal"])}}
+            "pace": pace, "goals": out, "problems": problems, "counts": counts}

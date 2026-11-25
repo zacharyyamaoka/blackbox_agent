@@ -327,3 +327,198 @@ export function partRow(S, key) {
       ...(c.idea ? [`idea: “${c.idea}”`] : [])].join(' · '),
   };
 }
+
+/* ── the study as the filtered rows alone say it (Zach, Daily Note 2026-11-25: "if I change the data that is being
+   included they should recompute") ─────────────────────────────────────────────────────────────────────────────────
+   narrowStudy(D, ids) -> a slice of the same shape as D, every number recomputed from the measured rows in `ids`:
+   - the ends: the top is the frozen set with the most parts (ties: the most measured sets under it, then the lowest
+     error); the bottom is the set under the top with the fewest parts (ties: the most measured sets between it and the
+     top, then the highest error). Unfiltered they are the study's base and target;
+   - path: the greedy path through the measured sets between the ends (each step: the fewest parts added, then the
+     lowest error), which is the box's own greedy path when every row is kept (it measured every step it took);
+   - components: leave-one-out from the top (frozen and refit) and add-one-in on the bottom, from the kept rows;
+   - overall: the study build's measured methods (leave-one-out, refit, add-one-in, path step, the measured orders and their
+     range, the convexity check, the sums) over the kept sets. WHY no estimate: the surrogate's Shapley and fANOVA were
+     fitted to all of the study's measured sets; a subset would need a refit, so they step aside while a filter is on;
+   - history: the search's lineage through the kept rows; pairs: those whose four corners are all kept;
+   - narrowed: {rows, of, empty?}: `empty` says why nothing can be computed (fewer than two nested frozen sets).
+   WHY in the model, not the views: one pure function the node test checks against the Python build, and every view
+   then draws its numbers from it unchanged. */
+export function narrowStudy(D, ids) {
+  const want = new Set((ids || []).map(String));
+  const order = D.components.map((c) => c.key);
+  const id = (keeps) => order.filter((k) => keeps.includes(k)).join(',');
+  const rows = (D.rows || []).filter((r) => want.has(String(r.id ?? r.solution)));
+  const variants = (D.variants || []).filter((v) => v.measured && want.has(v.solution));
+  const narrowed = { rows: rows.length, of: (D.rows || []).length };
+  const sets = new Map(); // set id -> its first frozen variant (the study build's setdefault over the variants' order)
+  for (const v of variants) if (v.removal === 'frozen' && v.objective && !sets.has(id(v.keeps))) sets.set(id(v.keeps), v);
+  const all = [...sets.values()];
+  const empty = (why) => ({ ...D, rows, variants, path: [], history: [], pairs: [], narrowed: { ...narrowed, empty: why } });
+  if (all.length < 2) return empty(`The filter leaves ${all.length === 1 ? 'one frozen set' : 'no frozen set'}: there is nothing to compare it with.`);
+  const has = (v) => new Set(v.keeps);
+  const inside = (a, b) => a.keeps.length < b.keeps.length && a.keeps.every((k) => has(b).has(k)); // a strictly inside b
+  const under = (s) => all.filter((o) => inside(o, s)).length;
+  const top = [...all].sort((a, b) => b.keeps.length - a.keeps.length || under(b) - under(a) || a.objective - b.objective)[0];
+  const scope = (o) => o === top || inside(o, top);
+  const between = (s) => all.filter((o) => inside(s, o) && scope(o)).length;
+  const below = all.filter((o) => inside(o, top));
+  if (!below.length) return empty(`No row the filter leaves contains another (${all.length} frozen sets, none inside another): there is no step to draw between them.`);
+  const bottom = [...below].sort((a, b) => a.keeps.length - b.keeps.length || between(b) - between(a) || b.objective - a.objective)[0];
+  const span = all.filter((o) => scope(o) && (o === bottom || inside(bottom, o)));
+
+  // the greedy path, bottom -> as far towards the top as the kept sets go
+  const path = [];
+  for (let cur = bottom; ;) {
+    const next = span.filter((o) => inside(cur, o));
+    if (!next.length) break;
+    const fewest = Math.min(...next.map((o) => o.keeps.length - cur.keeps.length));
+    const cands = next.filter((o) => o.keeps.length - cur.keeps.length === fewest).sort((a, b) => a.objective - b.objective);
+    const pick = cands[0];
+    const add = order.filter((k) => pick.keeps.includes(k) && !cur.keeps.includes(k));
+    const costs = Object.fromEntries((D.costs || []).map((c) => [c.key, pick[c.key] ?? null]));
+    path.push({ step: path.length + 1, add, solution: pick.solution, from_mm: cur.objective, to_mm: pick.objective, ...costs, admissible: pick.admissible,
+      candidates: cands.map((o) => ({ add: order.filter((k) => o.keeps.includes(k) && !cur.keeps.includes(k)).join('+'), objective: o.objective, how: 'measured', solution: o.solution })),
+      exact: true });
+    cur = pick;
+  }
+
+  // each part: removed from the top, added alone to the bottom
+  const refits = variants.filter((v) => v.removal === 'refit' && v.objective);
+  const components = D.components.map((c) => {
+    const k = c.key;
+    const minus = top.keeps.includes(k) ? id(top.keeps.filter((x) => x !== k)) : null;
+    const w = minus != null ? sets.get(minus) : null;
+    const r = minus != null ? refits.find((v) => id(v.keeps) === minus) : null;
+    const a = bottom.keeps.includes(k) ? null : sets.get(id([...bottom.keeps, k]));
+    return { ...c,
+      without: w ? w.solution : null, without_mm: w ? w.objective : null, without_factor: w ? w.objective / top.objective : null,
+      without_refit: r ? r.solution : null, without_refit_mm: r ? r.objective : null, without_refit_factor: r ? r.objective / top.objective : null,
+      alone: a ? a.solution : null, alone_mm: a ? a.objective : null, alone_factor: a ? bottom.objective / a.objective : null,
+      shapley_factor: null };
+  });
+
+  const history = [];
+  const rowOf = Object.fromEntries(variants.map((v) => [v.solution, v]));
+  for (const h of D.history || []) {
+    if (!want.has(h.solution)) continue;
+    const prev = history[history.length - 1];
+    if (!prev) { history.push({ ...h, component: null, added: [] }); continue; }
+    const a = rowOf[prev.solution], b = rowOf[h.solution];
+    const added = a && b ? order.filter((k) => b.keeps.includes(k) && !a.keeps.includes(k)) : (h.component ? [h.component] : []);
+    history.push({ ...h, component: added.length === 1 ? added[0] : added.includes(h.component) ? h.component : null, added, from_mm: prev.objective });
+  }
+
+  const fronts = {};
+  for (const c of D.costs || []) {
+    const pts = rows.filter((r) => r.admissible !== false && r[c.key] != null);
+    const err = (r) => r.error_mm ?? r.objective;
+    fronts[c.key] = pts.filter((p) => !pts.some((o) => o[c.key] <= p[c.key] && err(o) <= err(p) && (o[c.key] < p[c.key] || err(o) < err(p))))
+      .sort((a, b) => a[c.key] - b[c.key]).map((r) => r.solution);
+  }
+
+  return {
+    ...D, rows, variants, components, path, history, fronts,
+    study: { ...D.study, base: bottom.solution, target: top.solution },
+    objective: { ...D.objective, base: bottom.objective, target: top.objective },
+    pairs: (D.pairs || []).filter((p) => p.solutions.every((s) => want.has(s))),
+    overall: D.overall ? narrowOverall(D, order, sets, span, top, bottom, components, path) : null,
+    narrowed,
+  };
+}
+
+/** the study build's overall() measured half over the kept sets between the ends (log10 drops). */
+function narrowOverall(D, order, sets, span, top, bottom, components, path) {
+  const O = D.overall;
+  const id = (keeps) => order.filter((k) => keeps.includes(k)).join(',');
+  const f = new Map(span.map((v) => [id(v.keeps), Math.log10(v.objective)]));
+  const fAll = new Map([...sets.entries()].map(([k, v]) => [k, Math.log10(v.objective)]));
+  const T = id(top.keeps), B = id(bottom.keeps);
+  const total = f.get(B) - f.get(T);
+  const plus = (s, k) => id([...(s ? s.split(',') : []), k]);
+  const minus = (s, k) => id((s ? s.split(',') : []).filter((x) => x !== k));
+  const comp = Object.fromEntries(components.map((c) => [c.key, c]));
+  const loo = {}, aoi = {}, refit = {}, step = {};
+  for (const k of order) {
+    loo[k] = top.keeps.includes(k) && fAll.has(minus(T, k)) ? fAll.get(minus(T, k)) - f.get(T) : null;
+    aoi[k] = !bottom.keeps.includes(k) && fAll.has(plus(B, k)) ? f.get(B) - fAll.get(plus(B, k)) : null;
+    refit[k] = comp[k].without_refit_factor ? Math.log10(comp[k].without_refit_factor) : null;
+  }
+  for (const p of path) for (const k of p.add) step[k] = Math.log10(p.from_mm / p.to_mm) / p.add.length;
+  // the measured orders: chains B -> T through kept sets, one part at a time. WHY counted, not enumerated: a box that
+  // measured every set has 9! = 362880 orders; chains-to-here × chains-from-here weighs each step exactly as the study build's
+  // enumeration does (the node test enumerates them by brute force)
+  const free = order.filter((k) => top.keeps.includes(k) && !bottom.keeps.includes(k));
+  const memoTo = new Map(), memoFrom = new Map();
+  const toTop = (s) => {
+    if (s === T) return 1;
+    if (memoTo.has(s)) return memoTo.get(s);
+    let n = 0;
+    for (const k of free) if (!s.split(',').includes(k) && f.has(plus(s, k))) n += toTop(plus(s, k));
+    memoTo.set(s, n);
+    return n;
+  };
+  const fromBottom = (s) => {
+    if (s === B) return 1;
+    if (memoFrom.has(s)) return memoFrom.get(s);
+    let n = 0;
+    for (const k of free) if (s.split(',').includes(k) && f.has(minus(s, k))) n += fromBottom(minus(s, k));
+    memoFrom.set(s, n);
+    return n;
+  };
+  const N = toTop(B);
+  const avg = {}, lo = {}, hi = {};
+  if (N) {
+    for (const s of f.keys()) {
+      const into = fromBottom(s);
+      if (!into) continue;
+      for (const k of free) {
+        if (s.split(',').includes(k) || !f.has(plus(s, k))) continue;
+        const out = toTop(plus(s, k));
+        if (!out) continue;
+        const d = f.get(s) - f.get(plus(s, k));
+        avg[k] = (avg[k] || 0) + (d * into * out) / N;
+        lo[k] = Math.min(lo[k] ?? Infinity, d);
+        hi[k] = Math.max(hi[k] ?? -Infinity, d);
+      }
+    }
+  }
+  // the convexity check (Shapley 1971) on every nested pair of kept contexts, in the study build's order
+  let checks = 0, violations = 0, worst = null;
+  const keys = [...f.keys()];
+  const inSet = (s) => new Set(s ? s.split(',') : []);
+  for (const k of order) {
+    const ctx = keys.filter((s) => !inSet(s).has(k) && f.has(plus(s, k)));
+    for (const s of ctx) for (const t of ctx) {
+      if (s === t) continue;
+      const S = inSet(s), Tt = inSet(t);
+      if (!(S.size < Tt.size && [...S].every((x) => Tt.has(x)))) continue;
+      checks++;
+      const ms = f.get(s) - f.get(plus(s, k)), mt = f.get(t) - f.get(plus(t, k));
+      if (ms > mt + 1e-9) {
+        violations++;
+        const gap = ms - mt;
+        if (!worst || gap > worst.gap) {
+          worst = { part: k, smaller: [...S].filter(Boolean), larger: [...Tt].filter(Boolean), gap, factor: 10 ** gap, step_small: ms, step_large: mt,
+            solutions: [sets.get(s).solution, sets.get(plus(s, k)).solution, sets.get(t).solution, sets.get(plus(t, k)).solution] };
+        }
+      }
+    }
+  }
+  // a sum over no measured part is not 0 (×1): it is null, and the view leaves its row out
+  const sum = (o) => { const v = Object.values(o).filter((x) => x != null); return v.length ? v.reduce((a, x) => a + x, 0) : null; };
+  const mids = order.filter((k) => loo[k] != null && aoi[k] != null);
+  const parts = order.map((k) => ({
+    key: k, name: comp[k].name, loo: loo[k], loo_refit: refit[k], aoi: aoi[k], path: step[k] ?? null,
+    orders: avg[k] ?? null, orders_min: lo[k] ?? null, orders_max: hi[k] ?? null,
+    shapley: null, shapley_se: null, banzhaf: null, banzhaf_se: null, main: null, main_se: null, total_effect: null, total_effect_se: null,
+  }));
+  return {
+    ...O, total_drop: total, total_factor: 10 ** total, parts,
+    measured_sets: sets.size, measured_orders: N, estimates: false,
+    convexity: { checks, violations, worst },
+    sums: { loo: sum(loo), aoi: sum(aoi), midpoint: mids.length ? mids.reduce((a, k) => a + (loo[k] + aoi[k]) / 2, 0) : null, orders: N ? sum(avg) : null, shapley: null },
+    fanova: null,
+    methods: (O.methods || []).filter((m) => m.basis === 'measured'),
+  };
+}

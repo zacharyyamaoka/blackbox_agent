@@ -22,9 +22,9 @@
 import { BBElement, esc } from '../core/element.js';
 import { register } from '../core/registry.js';
 import { md } from '../core/inline.js';
-import { loadViews } from '../core/kit.js';
+import { loadViews, loadResize } from '../core/kit.js';
 import { makeStudy, facts, answers, gridOrder, viewName, bestIteration, fmtV, times, pct, signed, numberWord,
-  DASHBOARD_VIEWS, ablationBase, dashboardRows, partRow } from './bb-ablation.model.js';
+  DASHBOARD_VIEWS, ablationBase, dashboardRows, partRow, narrowStudy } from './bb-ablation.model.js';
 import { mountView } from './bb-ablation.views.js';
 import schema from './bb-ablation.schema.js';
 import css from './bb-ablation.css.js';
@@ -32,45 +32,87 @@ import css from './bb-ablation.css.js';
 let uid = 0;
 
 /* The six views as data-ui view types (proposals-ablation-page/01-data-ui/register.js): each draws the study of the
-   <bb-ablation> it sits in, narrowed to the rows data-ui's rail and search leave (input.rows), and opens data-ui's side
-   panel: a variant's row, or a part as a synthetic row. A solution that is not a row (a side branch) fires bb-open. */
+   <bb-ablation> it sits in, RECOMPUTED from the rows data-ui's rail and search leave (input.rows): narrowStudy's slice,
+   so the waterfall's steps, each part's leave-one-out and add-one-in, the measured orders and the fronts are those
+   rows' own. A row or a part opens data-ui's side panel; a solution that is not a row (a side branch) fires bb-open.
+   WHY (Zach, Daily Note 2026-11-25): "the dashboards are static they don't change and recompute as I change the
+   filtered data ... if I change the data that is being included they should recompute.. as if they are buffering then
+   it can show like a little spinner". Before, a filter only faded rows and every number was the whole study's. */
+const SPIN_MS = 250; // WHY a floor: a recompute takes a few ms; a spinner that flashes for one frame reads as a glitch
 function viewType(kind) {
   return class AblationView {
     constructor(host, el) {
       this.host = host;
       this.el = el;
       this.observers = [];
+      this.key = null;
+      this.token = 0;
       el.classList.add('dv-ablation');
       this.mount = document.createElement('div');
       this.status = document.createElement('p');
       this.status.className = 'small muted ab-status';
-      el.append(this.mount, this.status);
+      this.spin = document.createElement('div');
+      this.spin.className = 'ab-spin';
+      this.spin.setAttribute('role', 'status');
+      this.spin.innerHTML = '<i aria-hidden="true"></i><span>Recomputing from the filtered rows…</span>';
+      el.append(this.spin, this.mount, this.status);
     }
 
     update(input) {
-      if (!this.view) {
-        const owner = this.el.closest('bb-ablation');
-        if (!owner || !owner.S) { this.status.textContent = 'This view draws the study of the <bb-ablation> it sits in.'; return; }
-        const S = owner.S;
-        const rows = new Set(dashboardRows(S.D).map((r) => r.id));
-        const env = {
-          ...owner.env(),
-          observe: (ro) => this.observers.push(ro),
-          open: (id) => (rows.has(id) ? this.host.open(id) : owner.openSolution(id)),
-          pick: (key) => this.host.open(`part:${key}`, { row: partRow(S, key), title: S.name(key) }),
-        };
-        this.view = mountView(kind, this.mount, S, env, { head: true });
-      }
+      const owner = this.el.closest('bb-ablation');
+      if (!owner || !owner.S) { this.status.textContent = 'This view draws the study of the <bb-ablation> it sits in.'; return; }
       const ids = input.rows.map((r) => r.id);
       const all = ids.length === input.total;
-      this.view.setRows(all ? null : ids);
-      const perPart = kind === 'importance' || kind === 'overall';
-      this.status.textContent = all ? `All ${input.total} measured variants.`
-        : perPart ? `The rail's filter (${ids.length} of ${input.total} rows) does not change a per-part view: every number here is computed over the whole study.`
-          : `Drawn from the ${ids.length} of ${input.total} variants the rail leaves; the others are faded or left out.`;
+      const key = all ? '*' : ids.join('\n');
+      if (key === this.key && this.view) return; // the same rows: nothing to recompute
+      this.key = key;
+      const token = ++this.token;
+      const draw = () => {
+        if (token !== this.token || !this.el.isConnected) return;
+        this.draw(owner, all ? null : ids, input.total);
+      };
+      if (!this.view) { draw(); return; } // the first draw is the whole study, at once
+      const t0 = performance.now();
+      this.el.classList.add('computing');
+      this.el.setAttribute('aria-busy', 'true');
+      // WHY two frames: the spinner paints before the (synchronous) recompute and redraw take the main thread
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        draw();
+        setTimeout(() => {
+          if (token !== this.token) return;
+          this.el.classList.remove('computing');
+          this.el.removeAttribute('aria-busy');
+        }, Math.max(0, SPIN_MS - (performance.now() - t0)));
+      }));
     }
 
-    destroy() { for (const ro of this.observers) ro.disconnect(); this.observers = []; }
+    /** Remount the view over the study as these rows say it (null = every row), keeping its controls' state. */
+    draw(owner, ids, total) {
+      const { S, empty } = owner.studyFor(ids);
+      for (const ro of this.observers) ro.disconnect();
+      this.observers = [];
+      const keep = this.view && this.view.state;
+      if (empty) {
+        this.view = null;
+        this.mount.innerHTML = `<p class="ab-empty-filter">${esc(empty)}</p>`;
+        this.status.textContent = `${ids.length} of ${total} rows: widen the filter to recompute.`;
+        return;
+      }
+      const rows = new Set(dashboardRows(owner.S.D).map((r) => r.id));
+      const env = {
+        ...owner.env(),
+        observe: (ro) => this.observers.push(ro),
+        open: (id) => (rows.has(id) ? this.host.open(id) : owner.openSolution(id)),
+        pick: (key) => this.host.open(`part:${key}`, { row: partRow(S, key), title: S.name(key) }),
+      };
+      this.view = mountView(kind, this.mount, S, env, { head: true, state: keep || undefined });
+      this.view.state ||= keep;
+      this.status.textContent = !ids ? `All ${total} measured variants.`
+        : `Recomputed from the ${ids.length} of ${total} variants the filter leaves: ${S.D.study.base} (fewest parts) to ${S.D.study.target} (most parts), ${times(S.total)}.`
+          + (kind === 'importance' || kind === 'overall' ? ' The surrogate\'s estimates step aside: it was fitted to the whole study.' : '');
+    }
+
+    destroy() { this.token++; for (const ro of this.observers) ro.disconnect(); this.observers = []; }
   };
 }
 let registered = false;
@@ -143,6 +185,18 @@ export class BBAblation extends BBElement {
       uid: (p) => `${p}-ab${++uid}`,
       tiers: self.tiers,
     };
+  }
+
+  /** The study as these rows say it (null = every row: the folded study itself), cached per row set: every tab of
+      the dashboard asks for the same filter. {S} or {empty: why nothing can be computed}. */
+  studyFor(ids) {
+    if (!ids) return { S: this.S };
+    const key = ids.join('\n');
+    if (this._narrow && this._narrow.key === key && this._narrow.D === this.S.D) return this._narrow.out;
+    const N = narrowStudy(this.S.D, ids);
+    const out = N.narrowed.empty ? { empty: N.narrowed.empty } : { S: makeStudy(N) };
+    this._narrow = { key, D: this.S.D, out };
+    return out;
   }
 
   solLink(id) {
@@ -242,6 +296,25 @@ properties:\n${Object.entries(properties).map(([k, v]) => `  ${k}: ${JSON.string
     const rail = document.createElement('data-facets');
     rail.setAttribute('for', views.id);
     body.querySelector('.ab-dash').append(rail, views);
+    this.fillContainer(rail, views);
+  }
+
+  /** proposals-ablation-layout 01, Zach's pick: the rail is draggable (data-ui's splitter, width remembered) and the
+      views are as tall as the window under them (at least 520 px). */
+  async fillContainer(rail, views) {
+    const fit = () => {
+      if (!views.isConnected) return removeEventListener('resize', fit);
+      const top = views.getBoundingClientRect().top + window.scrollY;
+      const h = `${Math.max(520, Math.round(window.innerHeight - Math.min(top, 260) - 24))}px`;
+      views.style.setProperty('--data-height', h);
+      rail.style.setProperty('--data-height', h);
+    };
+    fit();
+    addEventListener('resize', fit);
+    try {
+      const { makeResizable } = await loadResize();
+      if (rail.isConnected) makeResizable(rail, { edge: 'right', min: 180, max: 440, key: 'bb-ablation/rail', label: 'the filter rail' });
+    } catch (e) { console.warn('[bb-ablation] the rail stays fixed: data-ui resize.js did not load', e); }
   }
 
   answers() {

@@ -1046,7 +1046,7 @@ bb-idea-views .dv-lanes-empty { position: absolute; font-size: 12px; color: var(
     wrap.append(views);
   }
 
-  /** "G2 Ready for the real arm: its 4 ideas, in plan order · ← its two lines · Show all 32 ideas" (02's banner). */
+  /** "G2 Ready for the real arm: its 4 ideas, in plan order · ← its goal · Show all 32 ideas" (02's banner). */
   goalBanner(goal, rows) {
     const el = document.createElement('div');
     el.className = 'bbiv-goal';
@@ -1055,7 +1055,7 @@ bb-idea-views .dv-lanes-empty { position: absolute; font-size: 12px; color: var(
     const mine = rows.filter((r) => (r.goal || []).includes(goal.value));
     const open = mine.filter((r) => !r.done);
     const pattern = this.context.links.page || '{page}.html';
-    const back = goal.id === 'none' ? '' : `<a href="${esc(fill(pattern, { page: 'goals' }))}?goal=${esc(goal.id)}" data-goals="${esc(goal.id)}">← ${esc(goal.id)}'s two lines</a>`;
+    const back = goal.id === 'none' ? '' : `<a href="${esc(fill(pattern, { page: 'goals' }))}?goal=${esc(goal.id)}" data-goals="${esc(goal.id)}">← ${esc(goal.id)}'s goal</a>`;
     const what = goal.id === 'none'
       ? `<b>${mine.length} ideas serve no goal</b>: ${open.length} still open. An idea joins a goal's roadmap with <code>- Goal: G2</code> under it in ideas.md.`
       : `<b>${esc(goal.id)}${g ? ` ${esc(g.title)}` : ''}</b>: its ${mine.length} ideas, in plan order (step 1 → ${mine.length})${open.length < mine.length ? `, ${mine.length - open.length} crossed off` : ''}.`;
