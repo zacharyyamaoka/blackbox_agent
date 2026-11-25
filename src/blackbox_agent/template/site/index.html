@@ -126,13 +126,29 @@
       // It's a setting in the box's own data, not an override.
       Promise.all([import('./dashboard/viewer/src/components/bb-evidence.js'), json('nav.json').catch(() => ({}))]).then(([, nav]) => {
         const hero = document.getElementById('hero'), progress = document.getElementById('progress');
+        // WHY ?run=<record path>#run (the TTA dispatcher, 2026-11-25): a page that links one (solution, task) run, like
+        // TTA's Model x Dataset cells, opens THAT run. A run the box doesn't have is said, never swapped silently for
+        // the default run (truthful rendering).
+        const want = new URLSearchParams(location.search).get('run') || '';
+        const found = want && runs.find((r) => r.path === want || r.solution === want);
         const ev = document.createElement('bb-evidence');
-        ev.setAttribute('settings', JSON.stringify({ picker: ((nav.landing || {}).evidence || {}).picker === true }));
+        ev.id = 'run';
+        ev.setAttribute('settings', JSON.stringify({ picker: ((nav.landing || {}).evidence || {}).picker === true, ...(found ? { run: found.path } : {}) }));
         ev.setAttribute('state-src', 'data/state.json');
         progress.append(document.getElementById('headliner'));
         progress.hidden = false;
         hero.replaceChildren(ev);
-        hero.insertAdjacentHTML('beforeend', `<figcaption class="hero-cap">A saved run of ${runs.length === 1 ? 'one solution' : `${runs.length} runs`}, replayed from the box's export: every number is the ruler's, from the run's own record.</figcaption>`);
+        if (want && !found) {
+          ev.insertAdjacentHTML('beforebegin', `<p class="hero-cap" id="hero-notice" role="status">The link asked for run <code>${esc(want)}</code>, which is not one of this box's ${runs.length} saved runs; showing <b>${esc(runs[0].solution)}</b> on <code>${esc(runs[0].task || '')}</code> instead.</p>`);
+        }
+        hero.insertAdjacentHTML('beforeend', `<figcaption class="hero-cap">${runs.length === 1 ? 'The one saved run' : `One of ${runs.length} saved runs`}, replayed from the box's export: every number is the ruler's, from the run's own record.</figcaption>`);
+        // the element exists only now, so the browser's own #run jump already missed it: scroll once it has drawn
+        if (location.hash === '#run') {
+          let tries = 0;
+          const wait = setInterval(() => {
+            if (ev.querySelector('.bbe-title') || ++tries > 50) { clearInterval(wait); ev.scrollIntoView({ block: 'start' }); }
+          }, 100);
+        }
       }).catch(() => {});
     }
   }).catch(() => {});

@@ -106,8 +106,12 @@ export class BBEvidence extends BBElement {
     this.innerHTML = '<div class="bb-muted" style="font-size:13px;padding:12px">Loading the run record…</div>';
     const rec = await this.load(this.path);
     this.show(rec);
-    // colour the other runs' chips by their verdicts (each record loads once, through the context)
-    for (const r of runs) if (r.path !== this.path) this.load(r.path).then(() => this.chips(), () => {});
+    // colour the other runs' chips by their verdicts. WHY not every record up front (the TTA dispatcher, 2026-11-25:
+    // 244 records, 32 MB, only to colour the chips): an entry that carries `admissible` colours its chip from the list;
+    // otherwise a record loads up front only while the list is small, and else when its chip is pointed at
+    if (s.picker && runs.length > 1 && runs.length <= 24) {
+      for (const r of runs) if (r.path !== this.path && typeof r.admissible !== 'boolean') this.load(r.path).then(() => this.chips(), () => {});
+    }
   }
 
   show(rec) {
@@ -172,6 +176,15 @@ export class BBEvidence extends BBElement {
 
   chips() {
     for (const b of this.querySelectorAll('.bbe-runs button')) {
+      const entry = this.runs.find((x) => x.path === b.dataset.run);
+      if (entry && typeof entry.admissible === 'boolean') {
+        b.querySelector('.dot').className = `dot ${entry.admissible ? 'ok' : 'bad'}`;
+        continue;
+      }
+      if (!b.dataset.lazy) { // a chip whose verdict isn't in the list loads its record when pointed at
+        b.dataset.lazy = '1';
+        b.addEventListener('pointerenter', () => this.load(b.dataset.run).then(() => this.chips(), () => {}), { once: true });
+      }
       const r = this.records.get(b.dataset.run);
       if (!r || typeof r.then === 'function') continue;
       const gates = (r.metrics || []).filter((x) => x.kind === 'gate');
