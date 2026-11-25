@@ -121,9 +121,13 @@
     // them), the Ticker moving down to Progress; else the Ticker stays the hero
     const runs = (s.playback && s.playback.runs) || [];
     if (runs.length) {
-      import('./dashboard/viewer/src/components/bb-evidence.js').then(() => {
+      // WHY the picker is off unless the box's nav.json turns it on with "landing": {"evidence": {"picker": true}}
+      // (the TTA dispatcher, 2026-11-24): a box with a few runs keeps the simple hero, and a box with many opts in.
+      // It's a setting in the box's own data, not an override.
+      Promise.all([import('./dashboard/viewer/src/components/bb-evidence.js'), json('nav.json').catch(() => ({}))]).then(([, nav]) => {
         const hero = document.getElementById('hero'), progress = document.getElementById('progress');
         const ev = document.createElement('bb-evidence');
+        ev.setAttribute('settings', JSON.stringify({ picker: ((nav.landing || {}).evidence || {}).picker === true }));
         ev.setAttribute('state-src', 'data/state.json');
         progress.append(document.getElementById('headliner'));
         progress.hidden = false;
