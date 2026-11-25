@@ -1,12 +1,17 @@
 """`blackbox build`: one box at one git ref -> its whole static site, ready for GitHub Pages.
 
-    <out>/index.html              the box's own site/index.html, else the stock landing (template/site/index.html)
+    <out>/index.html              the stock landing (template/site/index.html), or the box's site/overrides/index.html
     <out>/nav.json                the box's own site/nav.json, else the stock one (the Black box only)
     <out>/data/state.json         the fold of the ref (bb-state/1), the box export's `playback` slice kept
     <out>/dashboard/              the dashboard: this package's viewer, never a copy in the box
     <out>/overrides/<tag>.js      the box's own version of one stock component, wired in by an import map
     <out>/...                     every other file of the box's site/ at the ref (its tabs, its domain dashboards)
     <out>/blackbox-build.json     what was built from what: the package version, the ref, the overrides
+
+The landing is an override like any component (WHY, Zach 2026-11-24 on robot_sdk_agent's hand-written page: "the landing
+page is not like the stock one I designed"): the stock one always builds, and only site/overrides/index.html replaces it,
+counted with the box's other overrides on the dashboard. A box's plain site/index.html is not used (`blackbox check` says
+so); it was the pre-package layout, where the box owned a copy of the template's landing.
 
 Every box file is read from git at the ref, never the working tree (WHY: the same ref builds the same site, and a
 peer's in-flight files never ship). The fold runs as its own process (its plug-ins load modules by path).
@@ -36,6 +41,9 @@ DASHBOARD = PKG / "dashboard"
 TEMPLATE = PKG / "template"
 COMPONENTS = DASHBOARD / "viewer" / "src" / "components"
 RECORD = "blackbox-build.json"
+LANDING = "index.html"  # site/overrides/index.html: the box's own landing, the one override that is not a component
+STRAY_LANDING = ("site/index.html is not used: move it to site/overrides/index.html to replace the stock landing, "
+                 "or delete it")
 STATE = "site/data/state.json"
 JUNIT = "site/data/junit.xml"
 JUNIT_DIR = "site/data/junit"  # one junit per commit (<sha7>.xml[.gz]) for the Spec page's History; a box opts in
@@ -216,7 +224,15 @@ def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
 
         values = {"name": who["name"], "owner": who["owner"], "repo": who["repo"]}
         if (site / "index.html").exists():
-            record["landing"] = "the box's own (site/index.html)"
+            (site / "index.html").unlink()
+            record["dropped"].append(f"site/index.html ({STRAY_LANDING.split(': ', 1)[1]})")
+        own = site / "overrides" / LANDING
+        if own.is_file():
+            # the box's landing is served at the site's root, so its relative links are written as from site/
+            own.replace(site / "index.html")
+            if not any(own.parent.iterdir()):
+                own.parent.rmdir()
+            record["landing"] = f"the box's own (site/overrides/{LANDING})"
         else:
             (site / "index.html").write_text(fill(need(TEMPLATE / "site" / "index.html", "the landing").read_text(), values, "html"))
             record["landing"] = "stock"
@@ -228,10 +244,12 @@ def build(box: Path, out: Path, ref: str = "HEAD") -> dict:
         shutil.copytree(need(DASHBOARD, "the dashboard"), site / "dashboard",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
 
-        overrides = _overrides(site)
-        record["overrides"] = overrides
-        if overrides:
-            _wire_overrides(site, overrides)
+        components = _overrides(site)
+        record["overrides"] = sorted(components + ([LANDING] if record["landing"] != "stock" else []))
+        if components:
+            _wire_overrides(site, components)
+        if record["overrides"]:
+            _count_overrides(site, record["overrides"])
         (site / ".nojekyll").write_text("")
         (site / RECORD).write_text(json.dumps(record, indent=1) + "\n")
         if out.exists():
@@ -269,13 +287,17 @@ def _wire_overrides(site: Path, tags: list[str]) -> None:
         page_dir = posixpath.dirname(rel)
         imports = {_relative(f"dashboard/viewer/src/components/{t}.js", page_dir): _relative(f"overrides/{t}.js", page_dir)
                    for t in tags}
-        text = with_import_map(text, imports)
-        if rel == "dashboard/index.html":
-            # WHY on the page: drift is a number you can see, not a surprise (packaging report, "Hackable in three steps")
-            words = ", ".join(f"<code>{html.escape(t)}</code>" for t in tags)
-            note = (f'<p data-blackbox-overrides style="max-width:1120px;margin:24px auto;padding:0 16px;box-sizing:border-box;'
-                    f'color:var(--bb-muted,#71717a);font:12px/1.5 var(--bb-font,system-ui,sans-serif)">'
-                    f'{len(tags)} override{"s" if len(tags) != 1 else ""} (site/overrides/): {words}</p>\n')
-            at = text.lower().rfind("</body>")
-            text = text[:at] + note + text[at:] if at != -1 else text + note
-        page.write_text(text)
+        page.write_text(with_import_map(text, imports))
+
+
+def _count_overrides(site: Path, overrides: list[str]) -> None:
+    """The dashboard says how many stock parts the box replaces (its components and its landing), and which."""
+    # WHY on the page: drift is a number you can see, not a surprise (packaging report, "Hackable in three steps")
+    page = site / "dashboard" / "index.html"
+    text = page.read_text(errors="replace")
+    words = ", ".join(f"<code>{html.escape(t)}</code>" for t in overrides)
+    note = (f'<p data-blackbox-overrides style="max-width:1120px;margin:24px auto;padding:0 16px;box-sizing:border-box;'
+            f'color:var(--bb-muted,#71717a);font:12px/1.5 var(--bb-font,system-ui,sans-serif)">'
+            f'{len(overrides)} override{"s" if len(overrides) != 1 else ""} (site/overrides/): {words}</p>\n')
+    at = text.lower().rfind("</body>")
+    page.write_text(text[:at] + note + text[at:] if at != -1 else text + note)

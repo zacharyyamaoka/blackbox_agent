@@ -20,8 +20,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # WHY pages: read: configure-pages reads the box's Pages settings (GET /repos/…/pages); contents: read alone cannot
     permissions:
       contents: read
+      pages: read
     steps:
       - uses: actions/checkout@v4
         with:

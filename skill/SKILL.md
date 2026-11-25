@@ -59,7 +59,7 @@ The box holds only what is true of it. blackbox_agent builds the rest at every p
 
 | The box holds | blackbox_agent builds |
 |---|---|
-| `site/nav.json` (the site bar: the Black box, plus the box's own dashboards) | the landing page, unless the box has its own `site/index.html` |
+| `site/nav.json` (the site bar: the Black box, plus the box's own dashboards) | the landing page, unless the box overrides it with `site/overrides/index.html` (a plain `site/index.html` is not used) |
 | `site/tabs/`, its domain dashboards under `site/` | the dashboard (`dashboard/`), every viewer component |
 | `site/overrides/<tag>.js`: its own version of one stock component | the import map that swaps it in, and the count on the page |
 | `site/data/` slices its own export writes (`playback`), `junit.xml` | `data/state.json`, folded from the pushed commit |

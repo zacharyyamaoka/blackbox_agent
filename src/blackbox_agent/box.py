@@ -9,7 +9,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from blackbox_agent.site import PAGES_LINE, PKG, TEMPLATE, BoxError, build, fill, git, need
+from blackbox_agent.site import PAGES_LINE, PKG, STRAY_LANDING, TEMPLATE, BoxError, build, fill, git, need
 
 SCAFFOLD = PKG / "scaffold"
 # scaffold file -> its path in the box (WHY renamed: a packaged dot-file can be dropped by a build backend, and a nested
@@ -113,6 +113,8 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
             no_proposer.append(meta.split("/")[1])
     if no_proposer:
         notes.append(f"{len(no_proposer)} solution(s) record no proposer (agent + model): {', '.join(no_proposer[:8])}")
+    if "site/index.html" in tracked:  # the pre-package layout: the box's copy of the landing, which no longer wins
+        problems.append(STRAY_LANDING)
     if "tools/bb/VENDOR.json" in tracked:
         notes.append("tools/bb/ is a vendored copy of the fold: `blackbox build` replaces it; delete it once the box's "
                      "workflow calls blackbox_agent's site.yml")

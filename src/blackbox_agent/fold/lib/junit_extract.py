@@ -125,7 +125,9 @@ def added_in(repo: str, ref: str) -> dict[str, str]:
 # ── tests ────────────────────────────────────────────────────────────────────────────────────────────────────────
 def junit(path: str) -> dict:
     root = ET.parse(path).getroot()
-    suite = next(root.iter("testsuite"))
+    # WHY every suite, not the first: a run may write one <testsuite> per group (vibetracks_agent: 11 suites, 104
+    # checks); reading only the first put 29 tests on the Spec tab. pytest's single suite reads the same as before.
+    suites = list(root.iter("testsuite"))
     rows = []
     for tc in root.iter("testcase"):
         status = "pass"
@@ -138,9 +140,11 @@ def junit(path: str) -> dict:
         file = "tests/" + cls.split(".")[-1] + ".py" if cls.startswith("tests.") else cls
         name = tc.attrib["name"]
         rows.append({"id": f"{file}::{name}", "file": file, "fn": re.sub(r"\[.*$", "", name), "status": status})
-    a = suite.attrib
-    return {"tests": int(a["tests"]), "failures": int(a["failures"]), "errors": int(a["errors"]),
-            "skipped": int(a["skipped"]), "seconds": float(a["time"]), "at": a.get("timestamp"), "rows": rows}
+    def total(key, cast):
+        return sum(cast(s.attrib.get(key, 0) or 0) for s in suites)
+    return {"tests": total("tests", int), "failures": total("failures", int), "errors": total("errors", int),
+            "skipped": total("skipped", int), "seconds": round(total("time", float), 6),
+            "at": next((s.attrib["timestamp"] for s in suites if s.attrib.get("timestamp")), None), "rows": rows}
 
 
 # ── reports ──────────────────────────────────────────────────────────────────────────────────────────────────────

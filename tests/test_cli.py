@@ -74,6 +74,63 @@ class FreshBox(unittest.TestCase):
         with self.assertRaises(BoxError):
             build(self.box, self.root / "site")
 
+    def commit(self, files: dict[str, str], message: str) -> None:
+        for rel, text in files.items():
+            (self.box / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.box / rel).write_text(text)
+        subprocess.run(["git", "-C", str(self.box), "add", "--", *files], check=True)
+        subprocess.run(["git", "-C", str(self.box), "commit", "-qm", message], check=True)
+
+    def test_a_box_s_own_site_index_html_never_replaces_the_stock_landing(self):
+        # WHY (Zach, 2026-11-24, on robot_sdk_agent's hand-written page: "the landing page is not like the stock one I
+        # designed"): a stray site/index.html used to win silently; the stock landing always builds now
+        self.commit({"site/index.html": "<!doctype html><title>mine</title><p>MY OWN PAGE</p>"}, "a hand-written page")
+        record = build(self.box, self.root / "site")
+        landing = (self.root / "site" / "index.html").read_text()
+        self.assertEqual(record["landing"], "stock")
+        self.assertIn("<bb-headliner", landing)
+        self.assertNotIn("MY OWN PAGE", landing)
+        self.assertEqual(record["overrides"], [])
+        self.assertTrue(any(d.startswith("site/index.html") for d in record["dropped"]), record["dropped"])
+        problems, _ = check(self.box)
+        self.assertTrue(any("site/index.html is not used" in p and "site/overrides/index.html" in p for p in problems),
+                        problems)
+
+    def test_site_overrides_index_html_replaces_the_landing_and_counts_as_an_override(self):
+        self.commit({"site/overrides/index.html": "<!doctype html><title>mine</title><p>MY OWN LANDING</p>"},
+                    "the box's own landing")
+        record = build(self.box, self.root / "site")
+        site = self.root / "site"
+        self.assertEqual(record["landing"], "the box's own (site/overrides/index.html)")
+        self.assertIn("MY OWN LANDING", (site / "index.html").read_text())
+        self.assertFalse((site / "overrides" / "index.html").exists(), "the override is the landing, not a second page")
+        self.assertEqual(record["overrides"], ["index.html"])
+        page = (site / "dashboard" / "index.html").read_text()
+        self.assertIn("1 override (site/overrides/)", page)
+        self.assertIn("<code>index.html</code>", page)
+        self.assertNotIn('type="importmap" data-blackbox-overrides', page, "no component overridden: no import map")
+        problems, _ = check(self.box)
+        self.assertEqual(problems, [])
+
+    def test_a_landing_and_a_component_override_are_two_overrides(self):
+        self.commit({"site/overrides/index.html": "<!doctype html><head></head><body><p>MINE</p>"
+                     "<script type=module src=\"dashboard/viewer/src/components/bb-headliner.js\"></script></body>",
+                     "site/overrides/bb-site-nav.js": "export * from '../dashboard/viewer/src/components/bb-site-nav.js?stock';\n"},
+                    "two overrides")
+        record = build(self.box, self.root / "site")
+        site = self.root / "site"
+        self.assertEqual(record["overrides"], ["bb-site-nav", "index.html"])
+        self.assertIn("2 overrides (site/overrides/)", (site / "dashboard" / "index.html").read_text())
+        landing = (site / "index.html").read_text()
+        self.assertIn("MINE", landing)
+        self.assertIn('"./dashboard/viewer/src/components/bb-site-nav.js": "./overrides/bb-site-nav.js"', landing)
+        self.assertNotIn("index.html", json.dumps(self._import_maps(landing)), "the landing is never an import map entry")
+
+    @staticmethod
+    def _import_maps(page: str) -> list:
+        import re
+        return [json.loads(m) for m in re.findall(r'<script type="importmap"[^>]*>(.*?)</script>', page, re.S)]
+
     def test_build_never_overwrites_a_folder_it_did_not_write(self):
         out = self.root / "mine"
         out.mkdir()

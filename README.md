@@ -30,7 +30,7 @@ commit builds the same site. It is stdlib + git, with no dependencies, so it run
 |---|---|
 | `OBJECTIVES.md`, the ruler and scorer, gate limits: frozen | the fold (git → `state.json`, the `bb-state/1` format) |
 | `ledger.jsonl`, `solutions/`, `ideas.md`, `specs/`, `feedback/`, `status.json` | the viewer: every dashboard component, the dashboard page |
-| its domain code and domain dashboards | the stock landing page (a box may keep its own `site/index.html`) |
+| its domain code and domain dashboards | the stock landing page (a box replaces it only with `site/overrides/index.html`) |
 | `site/nav.json`, `site/tabs/`, `site/overrides/` | the site build, the Pages workflow, the loop |
 
 A shared update can change how a number looks, never the number: the ruler and the scorer stay in the box.
@@ -72,14 +72,18 @@ BBSiteNav.prototype.render = function () { stockRender.call(this); /* the box's 
 A file whose name starts with `_` is a helper the overrides share, not an override. A good override belongs here, in
 the package, so every box gets it.
 
+**The landing is an override too.** The stock landing always builds; `site/overrides/index.html` replaces it (served at
+the site's root, so its links are written as from `site/`) and is counted with the components. A plain
+`site/index.html` is not used: `blackbox check` says to move it to `site/overrides/index.html` or delete it.
+
 ## The site a build writes
 
 ```text
-index.html             the landing: the goal, the progress, "Open the dashboard →" (or the box's own site/index.html)
+index.html             the landing: the goal, the progress, "Open the dashboard →" (or the box's site/overrides/index.html)
 nav.json               the site bar on every page (bb-site-nav/1): the box's site/nav.json, or the Black box only
 data/state.json        the fold of the commit (bb-state/1); the box export's `playback` slice is kept
 dashboard/             the dashboard: the viewer's components, the stock parts they load, the tab templates
-overrides/<tag>.js     the box's own components, wired in by an import map
+overrides/<tag>.js     the box's own components, wired in by an import map (the dashboard counts them, and the landing)
 blackbox-build.json    what was built from what: this package's version, the box's commit, the overrides
 ```
 
