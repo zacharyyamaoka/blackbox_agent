@@ -1,0 +1,14 @@
+{
+  "schema": "ai-team-status/1",
+  "member": "{{name}}",
+  "remit": "optimize {{objective}} ({{direction}} is better) inside the gates (ruler v1, OBJECTIVES.md)",
+  "kpi": {
+    "name": "{{objective}} (best admissible, dev)",
+    "value": null,
+    "unit": null,
+    "direction": "{{kpi_direction}}",
+    "target": null
+  },
+  "status": "idle",
+  "blocked_on": null
+}

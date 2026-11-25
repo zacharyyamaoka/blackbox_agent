@@ -1,0 +1,55 @@
+# A black-box box's live page, for any box: fold the pushed commit, build the landing + dashboard + the box's own site
+# files with blackbox_agent (`blackbox build`), and deploy it to GitHub Pages. A box calls it with six lines (README,
+# "Deploy"); its Pages source must be "GitHub Actions" (Settings, Pages).
+#
+# WHY two jobs: with upload and deploy in one job, deploy-pages twice found "0 artifacts" 0.3 s after a successful
+#   upload; GitHub's own static-site template uploads in a build job and deploys in a second job.
+# WHY fetch-depth 0: the fold reads git log (each iteration's date and commit, the spec and gate history); the default
+#   shallow clone has one commit.
+# WHY uvx and nothing else: a box's own deps (often local path deps) cannot install on a runner, and the fold and the
+#   build are stdlib + git. A box tool the fold runs that needs a package lists exactly that in
+#   .github/fold-requirements.txt, and it is added to the same uvx environment.
+name: blackbox site
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "The blackbox_agent version to build with: a moving tag (v0), an exact one (v0.1.0) or a commit"
+        type: string
+        default: v0
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: blackbox build
+        env:
+          BLACKBOX_REF: ${{ inputs.ref }}
+        run: |
+          extra=()
+          if [ -f .github/fold-requirements.txt ]; then extra=(--with-requirements .github/fold-requirements.txt); fi
+          uvx "${extra[@]}" --from "git+https://github.com/zacharyyamaoka/blackbox_agent@${BLACKBOX_REF}" blackbox build --box . --out _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

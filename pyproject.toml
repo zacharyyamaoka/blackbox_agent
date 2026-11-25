@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blackbox-agent"
+dynamic = ["version"]
+description = "The shared half of every black-box agent repo: the fold (git -> state.json), the landing page and dashboard, the site build, the reusable Pages workflow and the loop."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Zach Yamaoka" }]
+requires-python = ">=3.11"
+# WHY none: the fold and the build run on a CI runner's plain Python (stdlib + git), and a box's own deps never install
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Source = "https://github.com/zacharyyamaoka/blackbox_agent"
+
+[project.scripts]
+blackbox = "blackbox_agent.cli:main"
+
+[tool.hatch.version]
+path = "src/blackbox_agent/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blackbox_agent"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "skill/", "tests/", ".github/", "README.md", "LICENSE", "pyproject.toml"]
