@@ -67,7 +67,11 @@ def _improves(new: float, old: float, direction: str) -> bool:
     return (new < old * (1 - FLAT)) if direction == "down" else (new > old * (1 + FLAT))
 
 
-def _pct(new: float, old: float) -> float:
+def _pct(new: float, old: float) -> float | None:
+    # WHY None from zero (the Vibe Tracks Agent, 2026-11-25): a change from 0 has no percentage; dividing crashed
+    # a private box's whole fold. Missing is shown as missing, never invented.
+    if not old:
+        return None
     return 100.0 * (new - old) / old
 
 

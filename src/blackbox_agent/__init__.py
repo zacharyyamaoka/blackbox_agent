@@ -10,4 +10,4 @@ the fold (git -> state.json), the landing page and dashboard, the site build, th
     blackbox check --box .                  # what the box is missing, and what the package replaces
 """
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
