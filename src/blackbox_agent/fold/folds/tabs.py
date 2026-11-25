@@ -35,7 +35,7 @@ NAME = re.compile(r"^(?:(\d+)-)?([a-z0-9][a-z0-9-]*)\.(json|md|base|html)$")
 KIND = {"json": "page", "md": "markdown", "base": "rows", "html": "html"}
 # the built-in page ids and the names the site keeps (src/core/slices.js PAGES + PAGE_ALIASES; tests/tabs.test.mjs holds
 # this list to that one)
-BUILTIN = {"overview", "spec", "feedback", "iterations", "ablation", "agents", "activity", "audits", "analysis", "ideas", "goals",
+BUILTIN = {"overview", "spec", "feedback", "triggers", "iterations", "ablation", "agents", "activity", "audits", "analysis", "ideas", "goals",
            "references", "notes", "reports", "solution", "tab", "objective", "node"}
 
 

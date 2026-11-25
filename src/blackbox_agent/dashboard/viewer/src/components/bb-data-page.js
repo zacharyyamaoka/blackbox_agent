@@ -8,6 +8,7 @@ import { register } from '../core/registry.js';
 import { get, splitOf } from '../core/slices.js';
 import { loadViews } from '../core/kit.js';
 import { noteRows, notePages } from '../core/notes.js';
+import { deriveRows } from '../core/derive.js';
 import schema from './bb-data-page.schema.js';
 
 let uid = 0;
@@ -44,6 +45,11 @@ bb-data-page .bbd { display: flex; gap: 12px; min-width: 0; }
 bb-data-page .bbd > data-facets { flex: 0 0 220px; min-width: 0; }
 bb-data-page .bbd > data-views { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 700px) { bb-data-page .bbd { flex-direction: column; } bb-data-page .bbd > data-facets { flex: none; } }
+/* CONTRACT §22.4: a row whose status badge says obsolete is kept, greyed and struck through (feedback that no longer
+   applies, a trigger dropped). WHY keyed on the stock badge (data-ui's display: status writes data-state): data-ui has no
+   row tone of its own (a gap named in §22.6), and the badge is what the row's own data says. */
+bb-data-page [data-id]:has(.dv-state[data-state="obsolete"]) { opacity: .55; }
+bb-data-page [data-id]:has(.dv-state[data-state="obsolete"]) :is(td, .dv-cell, .dv-card-title) { text-decoration: line-through; }
 `;
 
   readList() { return [this.settings.slice]; }
@@ -76,7 +82,8 @@ bb-data-page .bbd > data-views { flex: 1 1 auto; min-width: 0; }
     views.addEventListener('data-views-render', (e) => { this.dataset.drew = e.detail.type; }, { once: true });
     views.baseText = text;
     views.base = doc;
-    const rows = rowsOf(list);
+    // CONTRACT §22.4: display columns derived from the rows' own fields (feedback: standing, spec_link, bug)
+    const rows = deriveRows(s.slice, rowsOf(list));
     // CONTRACT §17: a row that is a Markdown file (`_note`) opens as the note in the Obsidian-parity viewer; set before the
     // data, so data-ui keeps the host's page (its own would fetch the file)
     const notes = noteRows(rows);

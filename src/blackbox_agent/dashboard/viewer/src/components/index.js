@@ -18,6 +18,7 @@ import './bb-nav.js';
 import './bb-needs-you.js';
 import './bb-notes.js';
 import './bb-page.js';
+import './bb-simreal.js';
 import './bb-site-nav.js';
 import './bb-solution-detail.js';
 import './bb-spec.js';

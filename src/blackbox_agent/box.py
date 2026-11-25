@@ -4,16 +4,18 @@ The format's lints (a named thing is a link, a relative link lands, the required
 
 from __future__ import annotations
 
+import importlib
 import json
 import re
 import subprocess
+import sys
 import tempfile
 from datetime import date
 from pathlib import Path
 
 from blackbox_agent import sources
 from blackbox_agent.lint import lint
-from blackbox_agent.site import PAGES_LINE, PKG, STRAY_LANDING, TEMPLATE, BoxError, build, fill, git, identity, need
+from blackbox_agent.site import FOLD, PAGES_LINE, PKG, STRAY_LANDING, TEMPLATE, BoxError, build, fill, git, identity, need
 
 SCAFFOLD = PKG / "scaffold"
 # scaffold file -> its path in the box (WHY renamed: a packaged dot-file can be dropped by a build backend, and a nested
@@ -131,6 +133,7 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
             no_proposer.append(meta.split("/")[1])
     if no_proposer:
         notes.append(f"{len(no_proposer)} solution(s) record no proposer (agent + model): {', '.join(no_proposer[:8])}")
+    problems += format_problems(tracked, text)
     if "site/index.html" in tracked:  # the pre-package layout: the box's copy of the landing, which no longer wins
         problems.append(STRAY_LANDING)
     if "tools/bb/VENDOR.json" in tracked:
@@ -188,6 +191,49 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
             problems.append(f"{len(leaks)} home path(s) in the built site (a box's page may be public): "
                             + "; ".join(leaks[:5]))
     return problems, notes
+
+
+def _fold_modules():
+    """The fold's own format modules (fold/folds/_bb_*.py) and its front-matter reader: the rules check holds a box to are
+    the ones the fold reads it by (one rule, one meaning). WHY by path: the fold is a folder of scripts, not a package."""
+    folds = FOLD.parent / "folds"
+    saved = list(sys.path)
+    try:
+        sys.path[:0] = [str(folds), str(FOLD.parent)]
+        mods = [importlib.import_module(n) for n in ("_bb_actions", "_bb_trigger", "_bb_feedback", "fold_state")]
+    finally:
+        sys.path[:] = saved
+    return mods
+
+
+def format_problems(tracked: set[str], text) -> list[str]:
+    """CONTRACT §22: every line of triggers.jsonl a bb-trigger/1 row (and a done trigger carrying the evidence its
+    acceptance names), every actions/<id>.md a box action that redefines no stock one, and every feedback note's §22.4
+    keys (tags, status, obsolete_why, entered_by, spec) as defined. Each problem reads "[lint] where: what; fix: fix"."""
+    has_triggers = "triggers.jsonl" in tracked
+    action_notes = sorted(p for p in tracked if re.fullmatch(r"actions/[^/]+\.md", p) and not p.endswith("/README.md"))
+    feedback = sorted(p for p in tracked if re.fullmatch(r"feedback/.+\.md", p) and not p.endswith("/README.md"))
+    if not (has_triggers or action_notes or feedback):
+        return []
+    actions, trigger, fb, fold_state = _fold_modules()
+    found: list[dict] = []
+    own = []
+
+    def front(path: str) -> tuple[dict, str]:
+        body = text(path) or ""
+        m = re.match(r"^---\n(.*?)\n---\n", body, re.S)
+        return (fold_state.simple_yaml(m.group(1)) if m else {}), (body[m.end():] if m else body)
+
+    for path in action_notes:
+        a, why = actions.box_action(path, *front(path))
+        found += why
+        if a:
+            own.append(a)
+    if has_triggers:
+        found += trigger.parse(text("triggers.jsonl") or "", actions.catalog(own))[1]
+    for path in feedback:
+        found += fb.problems(path, front(path)[0])
+    return [f"[{p['lint']}] {p['where']}: {p['what']}; fix: {p['fix']}" for p in found]
 
 
 def _nav_problems(site: Path) -> list[str]:

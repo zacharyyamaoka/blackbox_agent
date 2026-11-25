@@ -6,17 +6,19 @@
 export const HEADER = ['schema', 'box', 'ref', 'read_at', 'ref_date', 'about', 'objective'];
 export const SLICES = ['kpis', 'iterations', 'ablations', 'unscored', 'spec', 'needs', 'gates', 'ideas', 'costs', 'feedback', 'audits',
   'agents', 'activity', 'reports', 'report_files', 'references', 'playback', 'source', 'ablation_study', 'spec_history', 'analysis', 'notes', 'tabs', 'links',
-  'goals'];
+  'goals', 'triggers', 'simreal'];
 /** Row slices bb-data-page can show (arrays, or arrays nested one level down). */
 export const ROW_SLICES = ['iterations', 'ablations', 'unscored', 'needs', 'gates', 'ideas', 'feedback', 'audits', 'report_files',
   'references', 'kpis', 'agents.proposers', 'activity.recent', 'costs', 'spec.requirements', 'ablation_study.variants', 'ablation_study.rows',
-  'analysis', 'notes.rows'];
+  'analysis', 'notes.rows', 'triggers.rows', 'triggers.actions', 'triggers.problems'];
 // CONTRACT §16.2: the Ablation tab after Iterations (Zach treats the ablation study as its own tab).
 // CONTRACT §17 (Zach, 2026-11-24): Reports is Analysis; References and Notes are tabs; a box's own tabs follow these.
 // CONTRACT §20 (Zach, 2026-11-25): Goals after Notes, listed only when the box has goals/ (OPTIONAL_PAGES).
-export const PAGES = ['overview', 'spec', 'feedback', 'iterations', 'ablation', 'agents', 'activity', 'audits', 'analysis', 'ideas',
+// CONTRACT §22 (Zach, 2026-11-25): Triggers beside Feedback ("We also now want another tab for Triggers"), always listed:
+// its empty state says what fills it.
+export const PAGES = ['overview', 'spec', 'feedback', 'triggers', 'iterations', 'ablation', 'agents', 'activity', 'audits', 'analysis', 'ideas',
   'references', 'notes', 'goals'];
-export const PAGE_LABELS = { overview: 'Overview', spec: 'Spec', feedback: 'Feedback', iterations: 'Iterations', ablation: 'Ablation',
+export const PAGE_LABELS = { overview: 'Overview', spec: 'Spec', feedback: 'Feedback', triggers: 'Triggers', iterations: 'Iterations', ablation: 'Ablation',
   agents: 'Agents', activity: 'Activity', audits: 'Audits', analysis: 'Analysis', ideas: 'Ideas', references: 'References', notes: 'Notes',
   goals: 'Goals' };
 /** Tabs a box shows only when its state holds what they draw (CONTRACT §20): page id -> does this state have it.

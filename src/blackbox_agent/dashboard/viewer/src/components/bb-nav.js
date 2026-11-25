@@ -100,6 +100,12 @@ bb-nav .bbn-pop li code { margin-right: 6px; }
           : { text: String(A), title: `${A} shalls active; no test run folded, so none is known to pass` };
     }
     if (Array.isArray(d.feedback)) c.feedback = { text: String(d.feedback.length), title: 'feedback files' };
+    // CONTRACT §22: open triggers (not done, not obsolete) of all; absent slice = no count (never a guessed 0)
+    if (d.triggers && Array.isArray(d.triggers.rows)) {
+      const open = d.triggers.rows.filter((r) => r.status !== 'done' && r.status !== 'obsolete').length;
+      c.triggers = { text: open ? `${open}/${d.triggers.rows.length}` : String(d.triggers.rows.length),
+        title: `${open} open of ${d.triggers.rows.length} triggers (triggers.jsonl)` };
+    }
     if (Array.isArray(d.iterations)) c.iterations = { text: String(d.iterations.length),
       title: `${d.iterations.length} iterations${d.unscored?.length ? `, ${d.unscored.length} waiting for a score` : ''}` };
     if (Array.isArray(d.ablations)) c.ablation = { text: String(d.ablations.length), title: `${d.ablations.length} ablation runs (study variants, not search steps)` };

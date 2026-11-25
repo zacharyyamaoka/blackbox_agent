@@ -12,7 +12,7 @@ export default {
   description: "The box's site bar on every page: the box's name (to its landing page) then the open dashboard with ▾ in the top row, its menu listing every dashboard under its group's heading (nav.json \"layout\": \"switcher\", the default; \"two-rows\" spreads the dashboards out as tabs instead), the open dashboard's own tabs below with counts, folding into More ▾ as the width shrinks (the open tab never folds); Needs you, a GitHub button and the settings gear top right. Drawn from one site/nav.json (bb-site-nav/1).",
   // the same slices bb-nav reads for its counts and the box's own tabs (+ about for the repo when nav.json names none)
   reads: ['spec', 'feedback', 'iterations', 'ablations', 'unscored', 'agents', 'activity', 'audits', 'reports', 'analysis', 'needs', 'ideas',
-    'references', 'notes', 'tabs', 'goals'],
+    'references', 'notes', 'tabs', 'goals', 'triggers'],
   settings: [
     { id: 'src', type: 'text', label: 'nav.json', default: 'nav.json', info: "the site's bar file, relative to the page (a page deeper in the site climbs to it with ../)" },
     { id: 'current', type: 'text', label: 'Dashboard', default: '', info: "the open dashboard's id; empty = the one whose page this URL is" },

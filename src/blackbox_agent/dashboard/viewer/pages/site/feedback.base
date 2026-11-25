@@ -1,9 +1,14 @@
-# Feedback: one row per piece of feedback; 0 filed, so today's rows are the repo's dated quotes, candidates not filed
+# Feedback: one row per piece of feedback (feedback/<date>-<slug>.md). CONTRACT §22.4: a bug report is feedback tagged
+# bug-report (it names its source); "Became spec" links the spec it turned into (Zach, 2026-11-25: "Turning the feedback
+# into spec is how we make it not lossy"); an obsolete note stays, greyed and struck through; "Entered by" says whether a
+# person or an agent typed it in. `standing`, `spec_link` and `bug` are derived in the viewer (src/core/derive.js).
 # Stock: every black-box agent ships this file and swaps the data file. Grammar: Obsidian Bases + data-ui keys
 # (data-ui docs/CONTRACT.md §5). Data: proposals-pages/_build/fold.py from trajectory_tracking_agent @ 9ead945.
 data: feedback.json
 facets:
-  - status
+  - standing
+  - tags
+  - entered_by
   - spec
   - { property: date, as: date }
 open: { mode: side, splitAt: 980 }
@@ -12,28 +17,41 @@ properties:
   quote: { displayName: "His words, as the repo quotes them" }
   date: { displayName: "Said" }
   status: { displayName: "Status" }
+  standing: { displayName: "Standing", tones: { open: neutral, "became a spec": good, obsolete: muted } }
+  tags: { displayName: "Tags" }
+  bug: { displayName: "Bug report", type: boolean }
+  entered_by: { displayName: "Entered by" }
   spec: { displayName: "Requirements it names" }
+  spec_link: { displayName: "Became spec" }
   spec_first: { displayName: "Requirement" }
   path: { displayName: "Quoted at" }
   introduced_in: { displayName: "Quoted since commit" }
   from: { displayName: "From" }
   polarity: { displayName: "Good / bad" }
   became: { displayName: "Became" }
+  obsolete_why: { displayName: "Why obsolete" }
 views:
   - type: table
     name: Feedback
-    order: [date, title, status, spec, path]
+    order: [date, title, standing, tags, spec_link, entered_by, from, path]
     sort:
       - { property: date, direction: DESC }
-    display: { status: status }
+    display: { standing: status, spec_link: link }
   - type: kanban
     name: Board
-    order: [title, date, spec]
-    groupBy: { property: status }
-    groupOrder: ["candidate (not filed)", filed, became a requirement, done]
+    order: [title, date, spec_link, tags]
+    groupBy: { property: standing }
+    groupOrder: [open, became a spec, obsolete]
     columnWidth: 250
     sort:
       - { property: date, direction: DESC }
+  - type: table
+    name: Bug reports
+    order: [date, title, standing, spec_link, source, entered_by]
+    filters: 'bug == true'
+    sort:
+      - { property: date, direction: DESC }
+    display: { standing: status, spec_link: link }
   - type: list
     name: By requirement
     order: [title, quote, date, path]

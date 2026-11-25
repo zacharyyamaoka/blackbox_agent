@@ -1,0 +1,19 @@
+# The actions catalog (CONTRACT §22): the stock actions every box shares (tools/folds/_bb_actions.py), then the box's own
+# (actions/<id>.md). Each says what the routed agent does, the trigger kinds it is the default for, and when it is done.
+data: actions.json
+facets:
+  - accept
+  - stock
+open: { mode: side, splitAt: 980 }
+properties:
+  id: { displayName: "Action" }
+  what: { displayName: "What the agent does" }
+  kinds: { displayName: "Default for kinds" }
+  accept: { displayName: "Done when" }
+  also: { displayName: "Also needs" }
+  stock: { displayName: "Stock", type: boolean }
+  source: { displayName: "Declared in" }
+views:
+  - type: table
+    name: Actions
+    order: [id, kinds, accept, also, what, stock]

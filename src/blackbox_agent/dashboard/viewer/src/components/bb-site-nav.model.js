@@ -23,7 +23,7 @@ export const SCHEMA = 'bb-site-nav/1';
 export const LAYOUTS = ['switcher', 'two-rows'];
 /** The fold order of the viewer's tabs (lane NAV's nav.json, measured at 1280 / 1024 / 390): 1 folds last. */
 export const BOX_PRIORITY = { overview: 1, spec: 2, feedback: 2, iterations: 2, ablation: 3, analysis: 3, ideas: 3,
-  agents: 4, activity: 4, audits: 4, references: 4, notes: 4, goals: 3 };
+  agents: 4, activity: 4, audits: 4, references: 4, notes: 4, goals: 3, triggers: 4 };
 export const OWN_TAB_PRIORITY = 4;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
 // a path inside the site, relative to nav.json: no scheme, no leading /, no .. (nav.json sits at the site's root)

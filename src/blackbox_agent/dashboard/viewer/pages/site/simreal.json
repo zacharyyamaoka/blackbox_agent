@@ -1,0 +1,17 @@
+{
+  "schema": "bb-page/1",
+  "name": "Sim × Real",
+  "page": "simreal",
+  "links": {
+    "page": "../dashboard/#{page}",
+    "solution": "../dashboard/#solution={id}"
+  },
+  "sections": {
+    "simreal": {
+      "type": "bb-simreal"
+    }
+  },
+  "order": [
+    "simreal"
+  ]
+}

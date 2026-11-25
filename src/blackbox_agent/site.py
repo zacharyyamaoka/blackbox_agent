@@ -6,6 +6,7 @@
     <out>/data/files/<path>       each picture a box's .md shows from outside site/, at its path in the box (the notes
                                   viewer draws a note's pictures from here, and site/ ones from the site)
     <out>/dashboard/              the dashboard: this package's viewer, never a copy in the box
+    <out>/simreal/index.html      the stock Sim × Real workspace, only when the box's nav.json names it (viewer CONTRACT §21)
     <out>/overrides/<tag>.js      the box's own version of one stock component, wired in by an import map
     <out>/...                     every other file of the box's site/ at the ref (its tabs, its domain dashboards)
     <out>/blackbox-build.json     what was built from what: the package version, the ref, the overrides
@@ -43,6 +44,10 @@ DASHBOARD = PKG / "dashboard"
 TEMPLATE = PKG / "template"
 COMPONENTS = DASHBOARD / "viewer" / "src" / "components"
 RECORD = "blackbox-build.json"
+# the stock Sim × Real workspace (viewer CONTRACT §21): a box opts in with one nav.json entry, {"id": "simreal", "label":
+# "Sim × Real", "group": "box", "icon": "compare", "href": "simreal/"}, and the build writes the page there
+SIMREAL = "simreal"
+SIMREAL_PAGE = DASHBOARD / "viewer" / "site" / "simreal" / "index.html"
 LANDING = "index.html"  # site/overrides/index.html: the box's own landing, the one override that is not a component
 STRAY_LANDING = ("site/index.html is not used: move it to site/overrides/index.html to replace the stock landing, "
                  "or delete it")
@@ -192,8 +197,8 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
     who = identity(box, sha)
     record = {"schema": "blackbox-build/1", "package": f"blackbox-agent {__version__}", "box": who["name"],
               "repo": f"{who['owner']}/{who['repo']}" if who["owner"] else who["repo"], "ref": sha,
-              "landing": None, "nav": None, "overrides": [], "dropped": [], "junit": None, "kept": [], "carried": [],
-              "links": None}
+              "landing": None, "nav": None, "simreal": None, "overrides": [], "dropped": [], "junit": None, "kept": [],
+              "carried": [], "links": None}
     with tempfile.TemporaryDirectory(prefix="blackbox-build-") as tmp:
         root = Path(tmp)
         site = root / "site"
@@ -275,6 +280,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
             record["nav"] = "stock"
         shutil.copytree(need(DASHBOARD, "the dashboard"), site / "dashboard",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        record["simreal"] = _simreal(site, record)
 
         components = _overrides(site)
         record["overrides"] = sorted(components + ([LANDING] if record["landing"] != "stock" else []))
@@ -300,6 +306,30 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(site, out)
     return record
+
+
+def _simreal(site: Path, record: dict) -> str | None:
+    """The Sim × Real workspace's page at the href nav.json gives it ("simreal/"), when nav.json names the dashboard; None
+    (and no folder) when it does not. WHY only then: a box with no simulator has nothing to show there, and a page no bar
+    links to would be a dead end. The package's page takes the slot, as the dashboard's does: a box's own simreal/index.html
+    there is replaced and said so. The page loads ../dashboard/viewer/, so its href is one folder deep."""
+    try:
+        nav = json.loads((site / "nav.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None  # a nav.json the bar cannot read says so on every page; nothing to add here
+    entry = next((d for d in nav.get("dashboards") or [] if isinstance(d, dict) and d.get("id") == SIMREAL), None)
+    if entry is None:
+        return None
+    href = entry.get("href")
+    if not (isinstance(href, str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]*/", href)):
+        raise BoxError(f"site/nav.json: the Sim × Real dashboard's href is {json.dumps(href)}; write \"simreal/\" (a folder "
+                       "beside dashboard/, where the build puts the page)")
+    page = site / href / "index.html"
+    if page.exists():
+        record["dropped"].append(f"site/{href}index.html (the box's own; the stock Sim × Real page replaces it)")
+    page.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(need(SIMREAL_PAGE, "the Sim × Real page"), page)
+    return href
 
 
 def _overrides(site: Path) -> list[str]:

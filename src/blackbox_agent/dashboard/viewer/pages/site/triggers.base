@@ -1,0 +1,60 @@
+# Triggers: one row per trigger (triggers.jsonl, bb-trigger/1, CONTRACT §22), merged from its append-only lines, newest first
+# Stock: every black-box agent ships this file. Grammar: Obsidian Bases + data-ui keys (data-ui docs/CONTRACT.md §5).
+# Columns marked "(agent)" are filled by the agent the trigger was routed to, after the fact; the rest are written when
+# the trigger fires (Zach, 2026-11-25: "some fields that are automatically filed in, and then some that the triggered
+# agent can fill in after the fact").
+data: triggers.json
+facets:
+  - kind
+  - status
+  - action
+  - acceptance
+  - routed_agent
+  - { property: opened, as: date }
+open: { mode: side, splitAt: 980 }
+properties:
+  opened: { displayName: "Fired" }
+  t: { displayName: "Last change" }
+  kind: { displayName: "Kind" }
+  title: { displayName: "What happened" }
+  status: { displayName: "Status", tones: { done: good, obsolete: muted, new: neutral, settling: neutral, dispatched: neutral } }
+  action: { displayName: "Action" }
+  accept: { displayName: "Done when" }
+  acceptance: { displayName: "Accepted", tones: { met: good, waiting: muted, unmet: bad, "not needed": muted } }
+  routed_agent: { displayName: "Routed to" }
+  routed_session: { displayName: "Session" }
+  source_label: { displayName: "Source" }
+  source_link: { displayName: "Source link" }
+  events: { displayName: "Events settled", type: number, decimals: 0 }
+  filled_agent: { displayName: "Filled by (agent)" }
+  outcome: { displayName: "Outcome (agent)" }
+  spec: { displayName: "Spec (agent)" }
+  commit: { displayName: "Commit (agent)" }
+views:
+  - type: table
+    name: Triggers
+    order: [opened, kind, title, status, routed_agent, acceptance, action, accept, outcome, spec, source_link]
+    sort:
+      - { property: opened, direction: DESC }
+    display: { status: status, acceptance: status, source_link: link }
+  - type: kanban
+    name: Board
+    order: [title, kind, routed_agent, acceptance]
+    groupBy: { property: status }
+    groupOrder: [new, settling, dispatched, done, obsolete]
+    columnWidth: 250
+    sort:
+      - { property: opened, direction: DESC }
+  - type: table
+    name: By agent
+    order: [opened, kind, title, status, acceptance, outcome]
+    groupBy: { property: routed_agent, direction: ASC }
+    sort:
+      - { property: opened, direction: DESC }
+    display: { status: status, acceptance: status }
+  - type: timeline
+    name: Timeline
+    start: opened
+    title: title
+    color: kind
+    groupBy: { property: kind, direction: ASC }

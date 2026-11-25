@@ -1,0 +1,11 @@
+# Refused lines (CONTRACT §22): what the triggers fold could not read, each with its fix; `blackbox check` prints the same
+data: problems.json
+properties:
+  lint: { displayName: "Rule" }
+  where: { displayName: "Where" }
+  what: { displayName: "What is wrong" }
+  fix: { displayName: "Fix" }
+views:
+  - type: table
+    name: Refused lines
+    order: [where, what, fix, lint]

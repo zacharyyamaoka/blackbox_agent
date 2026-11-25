@@ -1,0 +1,69 @@
+{
+  "schema": "bb-page/1",
+  "name": "Triggers",
+  "page": "triggers",
+  "links": {
+    "page": "{page}.html",
+    "solution": "solution.html?id={id}"
+  },
+  "sections": {
+    "tabs": {
+      "type": "bb-nav",
+      "settings": {
+        "current": "triggers"
+      }
+    },
+    "rows": {
+      "type": "bb-data-page",
+      "settings": {
+        "slice": "triggers.rows",
+        "base": "triggers.base",
+        "view": "Triggers",
+        "height": 560,
+        "empty": "No triggers yet. When new data reaches the box (a bug report in feedback/, a gate turning red, a regression, a failed unit, a red watcher, new feedback, a reminder), whatever noticed it appends one bb-trigger/1 line to triggers.jsonl at the box's root; each later line of the same id records what changed (settling, dispatched, done), and the agent it was routed to fills in the outcome and the evidence its acceptance needs (CONTRACT §22)."
+      }
+    },
+    "actions_head": {
+      "type": "bb-markdown",
+      "settings": {
+        "markdown": "### Actions\n\nWhat each kind of trigger asks for, and when it counts as done."
+      }
+    },
+    "actions": {
+      "type": "bb-data-page",
+      "settings": {
+        "slice": "triggers.actions",
+        "base": "triggers-actions.base",
+        "view": "Actions",
+        "height": 320,
+        "facets": false,
+        "empty": "The actions catalog appears with the first trigger. Stock, in every box: fix-and-spec (done when its spec passes), restore-gate (when the gate is green), feedback-to-spec (when its spec passes), review-feature (when a human has reviewed it), reply (when the receiving agent confirms the message). A box adds its own as actions/<id>.md (front matter accept:, kinds:); it never redefines a stock one."
+      }
+    },
+    "problems_head": {
+      "type": "bb-markdown",
+      "settings": {
+        "markdown": "### Refused lines\n\nWhat the fold could not read as a trigger, each with its fix (`blackbox check` lists the same)."
+      }
+    },
+    "problems": {
+      "type": "bb-data-page",
+      "settings": {
+        "slice": "triggers.problems",
+        "height": 240,
+        "facets": false,
+        "empty": "No refused lines. A line of triggers.jsonl that is not a bb-trigger/1 row, a done trigger without the evidence its acceptance names, or an actions/ note that redefines a stock action is listed here, with its fix.",
+        "base": "triggers-problems.base",
+        "view": "Refused lines"
+      }
+    }
+  },
+  "order": [
+    "tabs",
+    "rows",
+    "actions_head",
+    "actions",
+    "problems_head",
+    "problems"
+  ]
+}

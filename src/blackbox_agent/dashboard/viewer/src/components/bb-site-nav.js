@@ -39,6 +39,8 @@ export const SITE_ICONS = {
   coverage: svg('<rect x="1.8" y="1.8" width="12.4" height="12.4" rx="2"/><circle cx="5" cy="10.5" r=".9" fill="currentColor"/><circle cx="7.6" cy="6.4" r=".9" fill="currentColor"/><circle cx="10.6" cy="9" r=".9" fill="currentColor"/><circle cx="11.4" cy="4.8" r=".9" fill="currentColor"/>'),
   comparison: svg('<path d="M1.8 11.5c2.3 0 3-6.5 6.2-6.5s3.6 4 6.2 4"/><path d="M1.8 12.8c2.6 0 3.4-5.2 6.2-5.2 2.4 0 3.4 2.6 6.2 2.6" stroke-dasharray="1.6 1.6"/>'),
   grid: svg('<rect x="1.8" y="1.8" width="12.4" height="12.4" rx="2"/><path d="M1.8 6h12.4M1.8 10h12.4M6 1.8v12.4M10 1.8v12.4"/>'),
+  // the Sim × Real workspace (CONTRACT §21): two overlapping frames, one solid (real) and one dashed (sim)
+  compare: svg('<rect x="1.8" y="4.2" width="8.4" height="8.4" rx="1.6"/><rect x="5.8" y="1.8" width="8.4" height="8.4" rx="1.6" stroke-dasharray="1.8 1.6"/>'),
   chevron: svg('<path d="m4.5 6.2 3.5 3.5 3.5-3.5"/>', ' class="bbs-chev"'),
   check: svg('<path d="m3.5 8.4 3 3 6-6.6"/>'),
 };

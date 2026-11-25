@@ -18,9 +18,10 @@ import bbNav from './bb-nav.schema.js';
 import bbNeedsYou from './bb-needs-you.schema.js';
 import bbNotes from './bb-notes.schema.js';
 import bbPage from './bb-page.schema.js';
+import bbSimreal from './bb-simreal.schema.js';
 import bbSiteNav from './bb-site-nav.schema.js';
 import bbSolutionDetail from './bb-solution-detail.schema.js';
 import bbSpec from './bb-spec.schema.js';
 import customHtml from './custom-html.schema.js';
 
-export default [bbAblation, bbCatalog, bbDataPage, bbEvidence, bbFrontier, bbGateMatrix, bbGates, bbGoals, bbHeadliner, bbIdeaPreview, bbIdeaViews, bbKpiStrip, bbLineage, bbLinks, bbMarkdown, bbNav, bbNeedsYou, bbNotes, bbPage, bbSiteNav, bbSolutionDetail, bbSpec, customHtml];
+export default [bbAblation, bbCatalog, bbDataPage, bbEvidence, bbFrontier, bbGateMatrix, bbGates, bbGoals, bbHeadliner, bbIdeaPreview, bbIdeaViews, bbKpiStrip, bbLineage, bbLinks, bbMarkdown, bbNav, bbNeedsYou, bbNotes, bbPage, bbSimreal, bbSiteNav, bbSolutionDetail, bbSpec, customHtml];
