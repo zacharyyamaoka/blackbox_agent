@@ -11,6 +11,14 @@ only what changed (status, routed_to, filled_by_agent, more evidence). The fold 
 Who fills what (Zach: "each trigger has some fields that are automatically filed in, and then some that the triggered
 agent can fill in after the fact"): AUTO fields are written by whatever noticed the data (a watcher, the dispatcher);
 `filled_by_agent` is written by the agent the trigger was routed to, after the fact.
+
+The agent CLAIMS; the box VERIFIES (0.1.14, agent_activity_agent's gap 1). `filled_by_agent` names its evidence (a spec,
+a gate, a receipt), but naming a spec is not running it: a condition is met only when the box itself ran the check and
+wrote `verified_by_box {at, commit, result: pass, how}` in its own row, after the claim (`acceptance`). A claim alone
+reads "claimed, not verified". WHY: before this, an agent could mark its own trigger met by typing a spec id.
+
+Importable as `blackbox_agent.trigger` (package/src/blackbox_agent/trigger.py loads THIS file from the installed fold,
+never a copy), so a box can `from blackbox_agent.trigger import Trigger` offline.
 """
 
 from __future__ import annotations
@@ -27,10 +35,14 @@ from _bb_actions import ACCEPTS, EVIDENCE, Action  # noqa: E402
 
 SCHEMA = "bb-trigger/1"
 STATUSES = ("new", "settling", "dispatched", "done", "obsolete")
+# a merged trigger's acceptance (`acceptance`), best to worst for the eye; only `met` counts as done-and-proved
+ACCEPTANCE = ("met", "claimed, not verified", "verify failed", "waiting", "unmet", "not needed")
+SOURCE_KINDS = ("path", "url", "unit", "ref")  # which key a source names; a source is one place
 ISO = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$"
 SLUG = r"^[a-z0-9][a-z0-9-]*$"
 _iso = {"type": "string", "pattern": ISO}
 _str = {"type": "string", "minLength": 1}
+_sha = {"type": "string", "pattern": "^[0-9a-f]{7,40}$"}
 
 
 def _f(schema: dict, auto: bool = True, merge: str = "replace", default=None, doc: str = ""):
@@ -50,11 +62,16 @@ class Trigger:
                           doc="new-bug-report | gate-red | regressed | unit-failed | watcher-red | feedback | reminder, or "
                               "a kind a box action names")
     title: str | None = _f({"type": "string"}, doc="one line: what happened")
+    key: str | None = _f(_str, doc="the dedupe key: the noticer's own name for this new data (e.g. "
+                                   "unit:foo.service:failed), so a second notice of it joins the open trigger")
+    track: str | None = _f(_str, doc="the track it routes by (one agent per track)")
+    repo: str | None = _f(_str, doc="the repo the new data is about, when it is not the box itself")
     source: dict | None = _f({"type": "object", "additionalProperties": False,
-                              "anyOf": [{"required": ["path"]}, {"required": ["url"]}],
-                              "properties": {"path": _str, "url": _str, "line": {"type": "integer", "minimum": 1},
-                                             "commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"}}},
-                             merge="dict", doc="where the new data is: a path in the box (and line, commit), or a url")
+                              "anyOf": [{"required": [k]} for k in SOURCE_KINDS],
+                              "properties": {"path": _str, "url": _str, "unit": _str, "ref": _str,
+                                             "line": {"type": "integer", "minimum": 1}, "commit": _sha}},
+                             merge="dict", doc="where the new data is: a path in the box (and line, commit), a url, a "
+                                               "unit (e.g. foo.service) or a git ref (a sha or a name)")
     evidence: tuple = _f({"type": "array", "items": {"type": "string"}}, merge="union", default=(),
                          doc="what the noticer saw, one line or path each; the settled events' lines are appended")
     action: str | None = _f({"type": "string", "pattern": SLUG},
@@ -70,8 +87,10 @@ class Trigger:
     routed_to: dict | None = _f({"type": ["object", "null"], "required": ["agent"], "additionalProperties": False,
                                  "properties": {"agent": _str, "session": {"type": ["string", "null"]},
                                                 "account": {"type": ["string", "null"]},
-                                                "spawned": {"type": "boolean"}}},
-                                merge="dict", doc="the agent (and session) it went to; spawned = a new agent was started")
+                                                "spawned": {"type": "boolean"},
+                                                "dispatch": {"type": ["string", "null"]}}},
+                                merge="dict", doc="the agent (and session) it went to; spawned = a new agent was started; "
+                                                  "dispatch = the dispatcher's id for the dispatch that carried it")
     filled_by_agent: dict | None = _f({"type": ["object", "null"], "additionalProperties": True,
                                        "properties": {"agent": _str, "model": {"type": "string"},
                                                       "session": {"type": "string"}, "at": _iso,
@@ -85,7 +104,26 @@ class Trigger:
                                                                                "verdict": {"enum": ["pass", "fail"]}}}}},
                                       auto=False, merge="dict",
                                       doc="written by the routed agent after the fact: outcome, and the evidence its "
-                                          "acceptance condition needs (spec, gate/commit, received_at, human, audit)")
+                                          "acceptance condition needs (spec, gate/commit, received_at, human, audit). "
+                                          "A claim: it counts only once the box verifies it (verified_by_box)")
+    verified_by_box: dict | None = _f({"type": ["object", "null"], "required": ["at", "commit", "result", "how"],
+                                       "additionalProperties": False,
+                                       "properties": {"at": _iso, "commit": _sha, "result": {"enum": ["pass", "fail"]},
+                                                      "how": _str}},
+                                      doc="written by the box (its watcher or the dispatcher), never the routed agent, "
+                                          "in its own row after the claim: it ran the check (how) at commit, and the "
+                                          "result. The only thing that makes a condition met")
+
+    def row(self) -> dict:
+        """This trigger as one triggers.jsonl row: only the keys it sets (schema always), tuples as lists."""
+        out = {}
+        for f in fields(self):
+            v = getattr(self, f.name)
+            if v is None or v == ():
+                continue
+            out[f.name] = list(v) if isinstance(v, tuple) else v
+        out["schema"] = out.get("schema") or SCHEMA
+        return {k: out[k] for k in FIELDS if k in out}
 
 
 FIELDS = {f.name: f for f in fields(Trigger)}
@@ -197,6 +235,10 @@ def parse(text: str, catalog: tuple[Action, ...] = actions_mod.STOCK, path: str 
             bad(n, "; ".join(why), "write the row as viewer/schemas/trigger.schema.json says (CONTRACT §22)")
             continue
         first = row["id"] not in merged
+        if "verified_by_box" in row and "filled_by_agent" in row:
+            bad(n, "carries both the agent's claim (filled_by_agent) and the box's verification (verified_by_box)",
+                "the box writes verified_by_box in its own row, after it ran the check the claim names")
+            continue
         if first:
             missing = [k for k in REQUIRED_FIRST if row.get(k) is None]
             if missing:
@@ -237,6 +279,11 @@ def _merge(cur: dict | None, row: dict, line: int) -> dict:
     if "status" in row:
         cur["history"] = [*cur["history"], {"t": row["t"], "status": row["status"]}]
     cur["_lines"] = [*cur["_lines"], line]
+    # a verification covers the claim as it stood when it was written; a later claim needs a new one
+    if "filled_by_agent" in row:
+        cur["_claimed"] = line
+    if "verified_by_box" in row:
+        cur["_verified"] = line
     return cur
 
 
@@ -267,6 +314,32 @@ def unmet(tr: dict, catalog: tuple[Action, ...] = actions_mod.STOCK) -> list[str
         if not ok:
             out.append("|".join(keys))
     return out
+
+
+def verification(tr: dict) -> dict | None:
+    """The box's verification that still covers the claim (written after its latest filled_by_agent row), or None."""
+    v = tr.get("verified_by_box")
+    if not isinstance(v, dict) or tr.get("_verified", 0) < tr.get("_claimed", 0):
+        return None
+    return v
+
+
+def acceptance(tr: dict, catalog: tuple[Action, ...] = actions_mod.STOCK) -> str:
+    """met only when the claim is complete AND the box verified it (result pass); one of ACCEPTANCE. MUTATION-TESTED
+    (tests/test_triggers.py::test_an_agents_claim_alone_never_reads_as_met): a claim alone never reads met."""
+    if tr.get("status") == "obsolete":
+        return "not needed"
+    v = verification(tr)
+    if v and v.get("result") == "fail":
+        return "verify failed"
+    if not unmet(tr, catalog):
+        return "met" if v and v.get("result") == "pass" else "claimed, not verified"
+    return "unmet" if tr.get("status") == "done" else "waiting"
+
+
+def source_kind(src) -> str | None:
+    """Which place a source names (SOURCE_KINDS, first present wins)."""
+    return next((k for k in SOURCE_KINDS if isinstance(src, dict) and src.get(k)), None)
 
 
 if __name__ == "__main__":

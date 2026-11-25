@@ -10,6 +10,7 @@ facets:
   - action
   - acceptance
   - routed_agent
+  - track
   - { property: opened, as: date }
 open: { mode: side, splitAt: 980 }
 properties:
@@ -20,7 +21,15 @@ properties:
   status: { displayName: "Status", tones: { done: good, obsolete: muted, new: neutral, settling: neutral, dispatched: neutral } }
   action: { displayName: "Action" }
   accept: { displayName: "Done when" }
-  acceptance: { displayName: "Accepted", tones: { met: good, waiting: muted, unmet: bad, "not needed": muted } }
+  acceptance: { displayName: "Accepted", tones: { met: good, "claimed, not verified": warn, "verify failed": bad, waiting: muted, unmet: bad, "not needed": muted } }
+  verified_result: { displayName: "Verified by box", tones: { pass: good, fail: bad } }
+  verified_how: { displayName: "How the box checked" }
+  verified_at: { displayName: "Verified at" }
+  key: { displayName: "Key" }
+  track: { displayName: "Track" }
+  repo: { displayName: "Repo" }
+  routed_dispatch: { displayName: "Dispatch" }
+  source_kind: { displayName: "Source kind" }
   routed_agent: { displayName: "Routed to" }
   routed_session: { displayName: "Session" }
   source_label: { displayName: "Source" }
@@ -33,10 +42,10 @@ properties:
 views:
   - type: table
     name: Triggers
-    order: [opened, kind, title, status, routed_agent, acceptance, action, accept, outcome, spec, source_link]
+    order: [opened, kind, title, status, routed_agent, acceptance, verified_result, action, accept, outcome, spec, track, source_link]
     sort:
       - { property: opened, direction: DESC }
-    display: { status: status, acceptance: status, source_link: link }
+    display: { status: status, acceptance: status, verified_result: status, source_link: link }
   - type: kanban
     name: Board
     order: [title, kind, routed_agent, acceptance]

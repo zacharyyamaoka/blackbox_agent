@@ -21,6 +21,11 @@ uvx --from git+https://github.com/zacharyyamaoka/blackbox_agent@v0 blackbox --he
 | `blackbox check --box <dir>` | is the box in the format (its required paths, every named file a link, every relative link landing, every `triggers.jsonl` line a `bb-trigger/1` row and every done trigger carrying the evidence its action's acceptance names, every `actions/` note a new action, every feedback note's keys as defined), does its site build, does every `nav.json` link land on a page, what does the package replace |
 | `blackbox skill` | prints the loop (the `blackbox` skill, [`skill/SKILL.md`](skill/SKILL.md)) |
 
+A box's own code writes triggers with the same type the fold reads them by (stdlib only, offline once installed):
+`from blackbox_agent.trigger import Trigger, append` then `append(box_dir, Trigger(id=..., box=..., kind=..., source={"unit": "foo.service"}, status="new"))`;
+`append` refuses (ValueError, nothing written) any row `blackbox check` would refuse. A condition reads **met** only
+when the box itself wrote `verified_by_box {at, commit, result: pass, how}` after the agent's claim.
+
 The build reads every box file from git at the ref (`--ref`, default `HEAD`), never the working tree, so the same
 commit builds the same site. It is stdlib + git, with no dependencies, so it runs on a CI runner's plain Python.
 

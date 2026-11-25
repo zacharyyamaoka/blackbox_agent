@@ -8,10 +8,11 @@ before (Zach's rule for every additive slice; `fold_state.py --all --check`).
 
 Shape: {rows: [...], actions: [...], counts: {<status>: n}, settle: {window_s, cap_s}, problems: [...]}.
 A row is the merged trigger (_bb_trigger.parse) flattened for the Triggers tab's table, newest first:
-    id, opened, t (its latest row), box, kind, title, status, action (+ action_from when the kind's default), accept
-    (+ accept_from), also, source_label, source_link, routed_agent, routed_session, spawned, filled_agent, outcome, spec,
-    commit, acceptance (met | waiting | unmet: done without the evidence | not needed: obsolete), unmet, events, evidence[], history[], and
-    the nested source, routed_to, filled_by_agent, settle as written (the side panel shows them).
+    id, opened, t (its latest row), box, kind, title, key, track, repo, status, action (+ action_from when the kind's
+    default), accept (+ accept_from), also, source_kind, source_label, source_link, routed_agent, routed_session,
+    spawned, routed_dispatch, filled_agent, outcome, spec, commit, acceptance (_bb_trigger.ACCEPTANCE: met only with the
+    box's own verification), verified_result / _at / _commit / _how, unmet, events, evidence[], history[], and the
+    nested source, routed_to, filled_by_agent, settle, verified_by_box as written (the side panel shows them).
 Stdlib only; every file through facts["tree"] (git show <ref>:<path>), never the working tree.
 """
 
@@ -48,23 +49,36 @@ def flat(tr: dict, about_url: str | None, sha: str) -> dict:
     src = tr.get("source") or {}
     routed = tr.get("routed_to") or {}
     filled = tr.get("filled_by_agent") or {}
-    path, url = src.get("path"), src.get("url")
-    link = url or (f"{about_url}/blob/{sha}/{path}" if about_url and path else path)
+    kind = _bb_trigger.source_kind(src)
+    label = src.get(kind) if kind else None
+    # WHY a scheme for what is not an address: data-ui's `display: link` draws a value as an <a> only when it is http(s)
+    # or a relative path (isLinkTarget); `unit:foo.service`, `ref:4c3942d`, `path:ledger.jsonl` (no repo URL to put it
+    # on) are drawn as that text, never a link that opens nothing (agent_activity_agent's gap 4)
+    if kind == "url":
+        link = label
+    elif kind == "path" and about_url:
+        link = f"{about_url}/blob/{sha}/{label}"
+    else:
+        link = f"{kind}:{label}" if kind else None
     unmet = _bb_trigger.unmet(tr)
+    verified = _bb_trigger.verification(tr) or {}
     row = {
         "id": tr["id"], "opened": tr["opened"], "t": tr["t"], "box": tr.get("box"), "kind": tr.get("kind"),
         "title": tr.get("title"), "status": tr.get("status"),
         "action": tr.get("action"), "accept": tr.get("accept"), "also": tr.get("also") or [],
-        "source_label": path or url, "source_link": link,
+        "key": tr.get("key"), "track": tr.get("track"), "repo": tr.get("repo"),
+        "source_kind": kind, "source_label": label, "source_link": link,
         "routed_agent": routed.get("agent"), "routed_session": routed.get("session"), "spawned": routed.get("spawned"),
+        "routed_dispatch": routed.get("dispatch"),
         "filled_agent": filled.get("agent"), "outcome": filled.get("outcome"), "spec": filled.get("spec"),
         "commit": filled.get("commit"),
-        "acceptance": ("not needed" if tr.get("status") == "obsolete" else "met" if not unmet
-                       else "unmet" if tr.get("status") == "done" else "waiting"),
+        "acceptance": _bb_trigger.acceptance(tr),
+        "verified_result": verified.get("result"), "verified_at": verified.get("at"),
+        "verified_commit": verified.get("commit"), "verified_how": verified.get("how"),
         "unmet": unmet, "events": (tr.get("settle") or {}).get("events"),
         "evidence": tr.get("evidence") or [], "history": tr["history"],
         "source": tr.get("source"), "routed_to": tr.get("routed_to"), "filled_by_agent": tr.get("filled_by_agent"),
-        "settle": tr.get("settle"),
+        "settle": tr.get("settle"), "verified_by_box": tr.get("verified_by_box"),
     }
     for k in ("action_from", "accept_from"):
         if k in tr:
