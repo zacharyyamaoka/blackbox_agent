@@ -7,7 +7,7 @@ export default {
   tag: 'bb-nav', name: 'Tabs', version: 1, wave: 1,
   description: "The box's tabs (Overview, Spec, Feedback, Triggers, Iterations, Ablation, Agents, Activity, Audits, Analysis, Ideas, References, Notes, Goals when the box has goals/, then the box's own from site/tabs/) with each tab's count read from state.json, the Needs-you pill, a GitHub button to the box's repo and a settings gear (Appearance: Light / Dark / System).",
   reads: ['spec', 'feedback', 'iterations', 'ablations', 'unscored', 'agents', 'activity', 'audits', 'reports', 'analysis', 'needs', 'ideas',
-    'references', 'notes', 'tabs', 'goals', 'triggers'],
+    'references', 'notes', 'tabs', 'goals', 'triggers', 'receipt'],
   settings: [
     { id: 'current', type: 'select', label: 'Current tab', default: 'overview',
       info: "a box's own tab is current when the page's `page` is its slug; `reports` is the old id of Analysis",

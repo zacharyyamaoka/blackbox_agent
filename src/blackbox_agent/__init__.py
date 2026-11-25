@@ -8,6 +8,8 @@ the fold (git -> state.json), the landing page and dashboard, the site build, th
     blackbox serve --box .                  # the same, served on 127.0.0.1
     blackbox new my_agent                   # a box skeleton: the stock files, an empty ledger
     blackbox check --box .                  # what the box is missing, and what the package replaces
+    blackbox answer --box . <need> <option> # answer one of its questions (needs.jsonl)
+    blackbox review --box . confirmed <id>  # confirm (or undo) what its agents decided for you
 """
 
-__version__ = "0.1.14"
+__version__ = "0.1.15"

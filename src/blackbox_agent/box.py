@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -134,6 +135,9 @@ def check(box: Path, ref: str = "HEAD") -> tuple[list[str], list[str]]:
     if no_proposer:
         notes.append(f"{len(no_proposer)} solution(s) record no proposer (agent + model): {', '.join(no_proposer[:8])}")
     problems += format_problems(tracked, text)
+    need_problems, need_notes = needs_findings(tracked, text)
+    problems += need_problems
+    notes += need_notes
     if "site/index.html" in tracked:  # the pre-package layout: the box's copy of the landing, which no longer wins
         problems.append(STRAY_LANDING)
     if "tools/bb/VENDOR.json" in tracked:
@@ -234,6 +238,102 @@ def format_problems(tracked: set[str], text) -> list[str]:
     for path in feedback:
         found += fb.problems(path, front(path)[0])
     return [f"[{p['lint']}] {p['where']}: {p['what']}; fix: {p['fix']}" for p in found]
+
+
+def needs_module():
+    """The fold's folds/_bb_needs.py: the Receipt's format (viewer CONTRACT §23), the rules the fold reads a box by."""
+    saved = list(sys.path)
+    try:
+        sys.path[:0] = [str(FOLD.parent / "folds")]
+        return importlib.import_module("_bb_needs")
+    finally:
+        sys.path[:] = saved
+
+
+def needs_findings(tracked: set[str], text) -> tuple[list[str], list[str]]:
+    """CONTRACT §23: every needs.jsonl line a vt-need/1 question (a gate, ruler or still-stop question with no default; a
+    default with when it lands), every actions.jsonl row with `undo` a decision with its detail, every review a
+    person's. A question of a kind with a stock default filed without one is a note, not a problem: he may keep one
+    waiting on purpose (agent_activity_agent keeps his requested tracks waiting for him)."""
+    if "needs.jsonl" not in tracked and "actions.jsonl" not in tracked:
+        return [], []
+    nm = needs_module()
+    needs, found = nm.parse_needs(text("needs.jsonl"))
+    found += nm.parse_actions(text("actions.jsonl"))[2]
+    problems = [f"[{p['lint']}] {p['where']}: {p['what']}; fix: {p['fix']}" for p in found]
+    bare = [n for n in needs if n.get("default") is None and (nm.KINDS.get(n.get("kind")) or {}).get("default")
+            and not n.get("closed") and not n.get("answered") and not n.get("answer")]
+    notes = []
+    if bare:
+        def stock(k):
+            d = nm.KINDS[k]["default"]
+            return f"{k}: {d['text']} after {d['after_h']} h"
+        notes.append(f"{len(bare)} question(s) of a kind with a stock default were filed without one: "
+                     + ", ".join(f"{n['id']} ({stock(n['kind'])})" for n in bare[:8])
+                     + ("" if len(bare) <= 8 else f" and {len(bare) - 8} more")
+                     + "; each waits on you until it gets one (viewer CONTRACT §23)")
+    return problems, notes
+
+
+def answer(box: Path, need_id: str, option: str, by: str | None = None, now: str | None = None) -> dict:
+    """Append his answer to a question: the question's latest needs.jsonl line, with t, answered and answer {option, by}.
+    The line the Receipt's Copy button shows for a box with no Vibe Tracks track. Refuses an unknown id or option."""
+    nm = needs_module()
+    path = Path(box).expanduser().resolve() / "needs.jsonl"
+    if not path.exists():
+        raise BoxError(f"{path} does not exist: the box has no questions")
+    needs = {n["id"]: n for n in nm.parse_needs(path.read_text())[0]}
+    if need_id not in needs:
+        raise BoxError(f"no question {need_id!r} in {path} (ids: {', '.join(needs) or 'none'})")
+    need = {k: v for k, v in needs[need_id].items() if k != "_line"}
+    options = [o["id"] for o in need.get("options") or []]
+    if options and option not in options:
+        raise BoxError(f"{need_id!r} has no option {option!r} (options: {', '.join(options)})")
+    t = now or _now()
+    row = {**need, "t": t, "answered": t, "answer": {"option": option, "by": {"human": by or _who(box)}}}
+    _append(path, row)
+    return row
+
+
+def review(box: Path, verdict: str, ids: list[str], by: str | None = None, now: str | None = None) -> dict:
+    """Append his review of decided lines to actions.jsonl: {t, kind: review, verdict, of, by: {human}}. Refuses an id
+    that is not a decided line (an actions.jsonl row with `undo`, or a question that went ahead on its default)."""
+    nm = needs_module()
+    root = Path(box).expanduser().resolve()
+    if verdict not in nm.VERDICTS:
+        raise BoxError(f"verdict must be one of {', '.join(nm.VERDICTS)}")
+    acts = root / "actions.jsonl"
+    known = {r["id"] for r in nm.parse_actions(acts.read_text() if acts.exists() else "")[0]}
+    needs_path = root / "needs.jsonl"
+    now_t = nm.ts(_now())
+    known |= {n["id"] for n in nm.parse_needs(needs_path.read_text() if needs_path.exists() else "")[0]
+              if nm.need_state(n, now_t) == "defaulted"}
+    unknown = [i for i in ids if i not in known]
+    if unknown:
+        raise BoxError(f"not a decided line: {', '.join(unknown)} (the Receipt's Decided for you lists their ids)")
+    row = {"t": now or _now(), "kind": "review", "verdict": verdict, "of": list(ids), "by": {"human": by or _who(box)},
+           "detail": f"{verdict} {len(ids)} decision(s)"}
+    _append(acts, row)
+    return row
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _who(box: Path) -> str:
+    out = subprocess.run(["git", "-C", str(box), "config", "user.name"], capture_output=True, text=True)
+    return out.stdout.strip() or os.environ.get("USER") or "unknown"
+
+
+def _append(path: Path, row: dict) -> None:
+    """One whole line at the end (the files are append-only; peers append too)."""
+    text = path.read_text() if path.exists() else ""
+    with path.open("a") as f:
+        if text and not text.endswith("\n"):
+            f.write("\n")
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def _nav_problems(site: Path) -> list[str]:

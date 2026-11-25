@@ -1,4 +1,5 @@
-"""The `blackbox` command: build, serve, new and check a black-box agent box."""
+"""The `blackbox` command: build, serve, new and check a black-box agent box; answer its questions and review what its
+agents decided (the Receipt, viewer CONTRACT §23)."""
 
 from __future__ import annotations
 
@@ -108,6 +109,24 @@ def _check(a: argparse.Namespace) -> int:
     return 1 if problems else 0
 
 
+def _answer(a: argparse.Namespace) -> int:
+    from blackbox_agent.box import answer
+
+    row = answer(Path(a.box), a.need, a.option, by=a.by)
+    print(f"needs.jsonl: answered {row['id']} with {a.option} (by {row['answer']['by']['human']}); commit it, and the "
+          "next build's Receipt shows it")
+    return 0
+
+
+def _review(a: argparse.Namespace) -> int:
+    from blackbox_agent.box import review
+
+    row = review(Path(a.box), a.verdict, a.ids, by=a.by)
+    print(f"actions.jsonl: {a.verdict} {', '.join(row['of'])} (by {row['by']['human']}); commit it, and the next "
+          "build's Receipt shows it")
+    return 0
+
+
 def _skill(a: argparse.Namespace) -> int:
     if a.path:
         print(SKILL)
@@ -156,6 +175,22 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--ref", default="HEAD")
     p.add_argument("--all", action="store_true", help=f"list every lint finding (default: the first {LINT_LISTED} of each)")
     p.set_defaults(run=_check)
+
+    p = sub.add_parser("answer", help="answer one of the box's questions: append his answer line to needs.jsonl "
+                                      "(the command the Receipt's Copy button shows)")
+    p.add_argument("need", help="the question's id (needs.jsonl)")
+    p.add_argument("option", help="the option's id")
+    p.add_argument("--box", default=".")
+    p.add_argument("--by", help="who answers (default: the box's git user.name)")
+    p.set_defaults(run=_answer)
+
+    p = sub.add_parser("review", help="confirm or undo lines an agent decided for you: append a review row to "
+                                      "actions.jsonl (the Receipt's All look right / Undo)")
+    p.add_argument("verdict", choices=["confirmed", "undone"])
+    p.add_argument("ids", nargs="+", help="the decided lines' ids (the Receipt lists them)")
+    p.add_argument("--box", default=".")
+    p.add_argument("--by", help="who reviews (default: the box's git user.name)")
+    p.set_defaults(run=_review)
 
     p = sub.add_parser("skill", help="print the blackbox loop (the skill: read, propose, evaluate, rebuild, commit)")
     p.add_argument("--path", action="store_true", help="print the SKILL.md path instead (to link it as a skill)")

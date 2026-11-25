@@ -6,7 +6,7 @@
 export const HEADER = ['schema', 'box', 'ref', 'read_at', 'ref_date', 'about', 'objective'];
 export const SLICES = ['kpis', 'iterations', 'ablations', 'unscored', 'spec', 'needs', 'gates', 'ideas', 'costs', 'feedback', 'audits',
   'agents', 'activity', 'reports', 'report_files', 'references', 'playback', 'source', 'ablation_study', 'spec_history', 'analysis', 'notes', 'tabs', 'links',
-  'goals', 'triggers', 'simreal'];
+  'goals', 'triggers', 'simreal', 'receipt'];
 /** Row slices bb-data-page can show (arrays, or arrays nested one level down). */
 export const ROW_SLICES = ['iterations', 'ablations', 'unscored', 'needs', 'gates', 'ideas', 'feedback', 'audits', 'report_files',
   'references', 'kpis', 'agents.proposers', 'activity.recent', 'costs', 'spec.requirements', 'ablation_study.variants', 'ablation_study.rows',

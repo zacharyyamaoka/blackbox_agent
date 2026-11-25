@@ -12,6 +12,7 @@ import { customTabs, ADD_TAB } from '../core/tabs.js';
 import { APPEARANCES, currentAppearance, setAppearance, restoreAppearance, storedAppearance } from '../core/appearance.js';
 import { GITHUB, GEAR } from '../core/icons.js';
 import { onTheme } from '../core/tokens.js';
+import { needsYou } from '../core/needs.js';
 import schema from './bb-nav.schema.js';
 
 const repoUrl = (about) => (about && typeof about.url === 'string' && /^https?:\/\//.test(about.url) ? about.url : null);
@@ -154,9 +155,9 @@ bb-nav .bbn-pop li code { margin-right: 6px; }
     // WHY pagesFor: a tab that draws nothing for this box (Goals with no goals/) is not listed (CONTRACT §20)
     const tabs = pagesFor(d).map((p) => tab(p, PAGE_LABELS[p], counts[p])).join('')
       + (own.length ? '<span class="bbn-sep" aria-hidden="true"></span>' : '') + own.map((t) => tab(t.slug, t.label, null, ' own')).join('');
-    const needs = Array.isArray(d.needs) ? d.needs.length : null;
+    const needs = needsYou(d);
     const pill = s.needs_pill && needs !== null
-      ? `<a class="bbn-pill${needs ? ' on' : ''}" href="${esc(fill(pattern, { page: 'overview' }))}#needs" data-page="needs" title="${needs ? 'open asks only Zach can answer' : 'nothing is waiting on Zach'}">Needs you <b>${needs}</b></a>` : '';
+      ? `<a class="bbn-pill${needs ? ' on' : ''}" href="${esc(fill(pattern, { page: 'overview' }))}#needs" data-page="needs" title="${needs ? 'what cannot go ahead without Zach: blocking, no default, or nothing undoes it' : 'nothing is waiting on Zach'}">Needs you <b>${needs}</b></a>` : '';
     const links = this.blocks.filter((b) => b.type === 'link' && b.settings.label && b.settings.url)
       .map((b) => linkHtml(b.settings)).join('');
     const brand = s.brand ? `<div class="bbn-brand" title="${esc(d.box)}">${esc(d.box || '')}${d.ref ? `<small class="bb-mono">@ ${esc(d.ref)}</small>` : ''}</div>` : '';

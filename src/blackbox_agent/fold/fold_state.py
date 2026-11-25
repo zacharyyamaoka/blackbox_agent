@@ -8,7 +8,7 @@
 Stdlib only, read-only on the box: every file through `git show <ref>:<path>` and `git log <ref>`, never the working
 tree (WHY: a peer's in-flight files are never read, and the same ref folds to the same bytes). What it reads is the
 box's metrics out and provenance only (README, OBJECTIVES.md, status.json, ledger.jsonl, solutions/*/meta.json and
-the ruler's scorecards, ideas.md, feedback/, audits/, agents/, activity.jsonl, git log), never a solution's code
+the ruler's scorecards, ideas.md, needs.jsonl, feedback/, audits/, agents/, activity.jsonl, git log), never a solution's code
 (Zach, 2026-11-24: "the blackbox viz is not related to the solution, only to the metrics out"). Every path read is
 listed in state["source"]["read"], and a test holds that list to that rule.
 
@@ -242,7 +242,20 @@ def ideas_rows(text: str) -> list[dict]:
     return rows
 
 
-def needs_from(ideas: list[dict], status: dict) -> list[dict]:
+def needs_module():
+    """folds/_bb_needs.py: the needs.jsonl format (CONTRACT §23), shared with folds/receipt.py and `blackbox check`."""
+    if "_bb_needs" not in sys.modules:
+        spec = importlib.util.spec_from_file_location("_bb_needs", HERE / "folds" / "_bb_needs.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["_bb_needs"] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules["_bb_needs"]
+
+
+def needs_from(ideas: list[dict], status: dict, need_text: str | None = None, clock: str | None = None) -> list[dict]:
+    """What only Zach can answer: status.json's blocked_on and ideas.md's open Suggestions for Zach, then (CONTRACT §23)
+    the open questions of the box's needs.jsonl, each with its default, when it lands, its kind and its Receipt step.
+    WHY the old rows keep their exact keys when there is no needs.jsonl: every box without one folds byte for byte."""
     out = []
     if status.get("blocked_on"):
         out.append({"ask": status["blocked_on"], "text": status["blocked_on"], "source": "status.json blocked_on",
@@ -252,6 +265,18 @@ def needs_from(ideas: list[dict], status: dict) -> list[dict]:
             title = i["title"]
             kind = "ruler" if title.lower().startswith("ruler") else ("test" if "test" in title.lower() else "decision")
             out.append({"ask": title, "text": i["text"], "source": f"ideas.md:{i['line']}", "section": i["section"], "kind": kind})
+    if need_text is None:
+        return out
+    nm = needs_module()
+    for row in out:  # an ideas.md ask or blocked_on has no default: it is his call
+        row.update({"state": "blocking" if row["kind"] == "blocked" else "no_default", "step": "call", "default": None, "lands": None})
+    now = nm.ts(clock)
+    track = (status.get("links") or {}).get("track")
+    for need in nm.parse_needs(need_text)[0]:
+        state = nm.need_state(need, now)
+        step = nm.step_of(need, state)
+        if step in ("call", "ahead"):
+            out.append(nm.need_row(need, state, step, track))
     return out
 
 
@@ -820,7 +845,7 @@ def fold_standard(t: Tree) -> tuple[dict, dict]:
         "iterations": its,
         "ablations": ablations,
         "unscored": unscored,
-        "needs": needs_from(ideas, status),
+        "needs": needs_from(ideas, status, t.text("needs.jsonl"), t.date()),
         "ideas": ideas,
         "gates": gates_slice(t, obj_doc, its, None),
         "feedback": front_matter_rows(t, "feedback"),
