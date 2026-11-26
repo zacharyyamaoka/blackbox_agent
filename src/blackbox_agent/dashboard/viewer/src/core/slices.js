@@ -6,11 +6,11 @@
 export const HEADER = ['schema', 'box', 'ref', 'read_at', 'ref_date', 'about', 'objective'];
 export const SLICES = ['kpis', 'iterations', 'ablations', 'unscored', 'spec', 'needs', 'gates', 'ideas', 'costs', 'feedback', 'audits',
   'agents', 'activity', 'reports', 'report_files', 'references', 'playback', 'source', 'ablation_study', 'spec_history', 'analysis', 'notes', 'tabs', 'links',
-  'goals', 'triggers', 'simreal', 'receipt'];
+  'goals', 'triggers', 'simreal', 'receipt', 'task_results'];
 /** Row slices bb-data-page can show (arrays, or arrays nested one level down). */
 export const ROW_SLICES = ['iterations', 'ablations', 'unscored', 'needs', 'gates', 'ideas', 'feedback', 'audits', 'report_files',
   'references', 'kpis', 'agents.proposers', 'activity.recent', 'costs', 'spec.requirements', 'ablation_study.variants', 'ablation_study.rows',
-  'analysis', 'notes.rows', 'triggers.rows', 'triggers.actions', 'triggers.problems'];
+  'analysis', 'notes.rows', 'triggers.rows', 'triggers.actions', 'triggers.problems', 'task_results'];
 // CONTRACT §16.2: the Ablation tab after Iterations (Zach treats the ablation study as its own tab).
 // CONTRACT §17 (Zach, 2026-11-24): Reports is Analysis; References and Notes are tabs; a box's own tabs follow these.
 // CONTRACT §20 (Zach, 2026-11-25): Goals after Notes, listed only when the box has goals/ (OPTIONAL_PAGES).

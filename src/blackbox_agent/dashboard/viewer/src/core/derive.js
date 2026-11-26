@@ -34,7 +34,22 @@ export function nameRows(rows) {
     : { ...r, expect_status: EXPECT_WHEN[r.expect_when] ?? r.expect_when }));
 }
 
+/** task_results rows (CONTRACT §28): `iteration`, the row label the Iteration × Dataset pivot nests by ("#31 p5s-pass3",
+    the number the Iterations list shows beside the id); `dataset_split` ("ur5e_alone/workspace/v2 · dev", one line per
+    dataset on Progress by dataset); `id`, solution/dataset/split/task. WHY here, not in the fold: ~2,000 rows a box,
+    and each is only the row's own fields restated. A row's own key of the same name wins. */
+export function taskRows(rows) {
+  return rows.map((r) => {
+    if (r.solution === undefined) return r;
+    const out = { ...r };
+    if (out.iteration === undefined) out.iteration = r.n === null || r.n === undefined ? String(r.solution) : `#${r.n} ${r.solution}`;
+    if (out.dataset_split === undefined) out.dataset_split = [r.dataset, r.split].filter(Boolean).join(' · ') || null;
+    if (out.id === undefined) out.id = [r.solution, r.dataset, r.split, r.task].filter((x) => x !== null && x !== undefined).join('/');
+    return out;
+  });
+}
+
 /** slice -> its row deriver. */
-export const DERIVED = { feedback: feedbackRows, iterations: nameRows, ablations: nameRows, unscored: nameRows };
+export const DERIVED = { feedback: feedbackRows, iterations: nameRows, ablations: nameRows, unscored: nameRows, task_results: taskRows };
 
 export const deriveRows = (slice, rows) => (DERIVED[slice] ? DERIVED[slice](rows) : rows);

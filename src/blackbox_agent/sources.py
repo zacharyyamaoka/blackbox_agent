@@ -459,9 +459,12 @@ def _without_public_provenance(text: str, prefix: str) -> str:
     return json.dumps(state, ensure_ascii=False)
 
 
-def leak_scan(tree: Path, side: PrivateSide | None = None, *, public_blob_prefix: str = "") -> list[str]:
+def leak_scan(tree: Path, side: PrivateSide | None = None, *, public_blob_prefix: str = "",
+              stock_handoff: str = "") -> list[str]:
     """Every leak in a built site, one line each: a private name or private text (this machine's `side`), a home path,
     an `obsidian:` URI. The package's own dashboard/ is not read: it holds no box data."""
+    from blackbox_agent.handoff import PATH as HANDOFF_PATH
+
     side = side or PrivateSide()
     hits: list[str] = []
     for f in sorted(p for p in Path(tree).rglob("*") if p.is_file()):
@@ -483,6 +486,10 @@ def leak_scan(tree: Path, side: PrivateSide | None = None, *, public_blob_prefix
             # suffix and any prose with those same words, as well as all raw names.
             prose = (_without_public_provenance(text, public_blob_prefix)
                      if rel == "data/state.json" and public_blob_prefix and public_blob_prefix in text else text)
+            if rel == HANDOFF_PATH and stock_handoff:
+                # WHY only the exact generated prefix: stock instructions can appear verbatim in private notes.
+                # Continue scanning appended excerpts and private names across the entire handoff.
+                prose = prose.removeprefix(stock_handoff)
             found = shingles(prose) & side.shingles
             if found:
                 hits.append(f"{rel}: private text ({len(found)} run(s) of {SHINGLE} words from a private note)")

@@ -6,6 +6,7 @@ from textwrap import dedent
 
 
 FILES = ("OBJECTIVES.md", "AGENTS.md", "PROGRESS.md", "ideas.md", "README.md", "status.json")
+PATH = "data/agent-handoff.md"
 
 
 def prompt(who: dict, ref: str, context: dict[str, str], latest_score: str = "") -> str:
@@ -88,7 +89,8 @@ def prompt(who: dict, ref: str, context: dict[str, str], latest_score: str = "")
     return "\n\n".join([brief, *sections]) + "\n"
 
 
-def write(box: Path, ref: str, tracked: set[str], site: Path, who: dict, *, include_context: bool) -> None:
+def write(box: Path, ref: str, tracked: set[str], site: Path, who: dict, *, include_context: bool) -> str:
+    """Write the handoff and return the exact stock prefix for the private prose scan."""
     from blackbox_agent.site import git
 
     context = {}
@@ -106,13 +108,15 @@ def write(box: Path, ref: str, tracked: set[str], site: Path, who: dict, *, incl
     try:
         doc = json.loads(nav.read_text(encoding="utf-8"))
     except ValueError:
-        return  # The site bar and blackbox check already report malformed navigation.
+        return ""  # The site bar and blackbox check already report malformed navigation.
     if not isinstance(doc, dict) or not isinstance(doc.get("site"), dict):
-        return  # The site bar and blackbox check already report malformed navigation.
+        return ""  # The site bar and blackbox check already report malformed navigation.
     # WHY use the site name: a box may give its dashboard a title distinct from the README.
     name = doc["site"].get("name")
     shown = {**who, "name": name} if isinstance(name, str) and name.strip() else who
-    path = "data/agent-handoff.md"
-    (site / path).write_text(prompt(shown, ref, context, latest_score), encoding="utf-8")
-    doc["site"]["handoff"] = path
+    stock = prompt(shown, ref, {})
+    (site / PATH).write_text(prompt(shown, ref, context, latest_score) if context or latest_score else stock,
+                             encoding="utf-8")
+    doc["site"]["handoff"] = PATH
     nav.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return stock

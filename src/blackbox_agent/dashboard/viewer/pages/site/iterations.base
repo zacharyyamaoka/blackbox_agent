@@ -4,14 +4,30 @@
 # CONTRACT §24 (Zach, 2026-11-25, "HUman readable iteration names"): the summary beside the id, a peek that leads with
 # the summary, then the prediction beside what happened, then the description; facets by family, by any prefix of the
 # dotted name (lineage) and by parent. A box that names nothing shows these as missing ("—"), never invented.
+# CONTRACT §28 (Zach, 2026-11-25, "Iteration x Dataset … as simple as just adding these views to the iteration page …
+# and then kinda like enriching the filter with that information"; "no filters on the columns! I should be able to
+# select which different datasets etc I want to be comparing it on"): PICKS B2, one rail, more view tabs. The views
+# after Kept only read `task_results` (one row per iteration × scorecard × task, generic over every dataset the box's
+# scorecards carry); the rail filters both grains: Dataset, Split, Task kind and Speed pick the columns (on the list
+# they keep the iterations that ran one). The host swaps the rows on a `from:` view (data-ui's <data-views> has no
+# `from:` yet, §28.4) and joins each task row to its iteration by the link below.
 data: iterations.json
+datasets:
+  task_results: task_results.json
+links:
+  - { from: task_results.solution, to: iterations.id }
 facets:
   - verdict
+  - { property: dataset, label: Dataset }
+  - { property: split, label: Split }
+  - { property: kind, label: Task kind }
+  - { property: speed, label: Speed }
   - admissible
   - proposer
   - { property: objective, as: range, label: Dev error (mm) }
   - { property: failed_tasks, as: range }
   - { property: family, label: Family }
+  - { property: model, label: Model }
   - { property: lineage, label: Name starts with, searchable: true }
   - parent
 open: { mode: side, splitAt: 980 }
@@ -49,6 +65,20 @@ properties:
   g_saturation_share_pct: { displayName: "Saturation" }
   g_limit_violations: { displayName: "Limits" }
   g_floor_clearance: { displayName: "Floor" }
+  model: { displayName: "Model" }
+  iteration: { displayName: "Iteration" }
+  solution: { displayName: "Solution" }
+  deployment: { displayName: "Deployment" }
+  dataset: { displayName: "Dataset" }
+  split: { displayName: "Split" }
+  dataset_split: { displayName: "Dataset · split" }
+  speed: { displayName: "Speed", type: number }
+  kind: { displayName: "Task kind" }
+  task: { displayName: "Task" }
+  value: { displayName: "Objective (this task)", type: number, digits: 4, better: lower }
+  gates_passed: { displayName: "Gates passed", type: number, decimals: 0, better: higher }
+  gates: { displayName: "Gates", type: number, decimals: 0 }
+  gates_failed: { displayName: "Gates failed" }
 views:
   - type: table
     name: Iterations
@@ -102,3 +132,52 @@ views:
     order: [n, id, objective, holdout, parent, change]
     sort:
       - { property: n, direction: ASC }
+  - type: pivot
+    name: × Dataset
+    from: task_results
+    splitBy: [deployment, split, dataset, kind, task]
+    value: { property: value, summary: Median }
+    pivot:
+      rows: [iteration]
+      roles: { deployment: deployment, split: group, dataset: dataset, kind: kind, task: unit }
+      rollup: median
+      metrics: [value, gates_passed]
+      color: rank
+      interval: median
+      layout: compact
+      fold: { rows: closed, columns: 3 }
+      headers: horizontal
+  - type: pivot
+    name: × Dataset · by family
+    from: task_results
+    splitBy: [deployment, split, dataset, kind, task]
+    value: { property: value, summary: Median }
+    pivot:
+      rows: [family, model, iteration]
+      roles: { deployment: deployment, split: group, dataset: dataset, kind: kind, task: unit }
+      rollup: median
+      metrics: [value, gates_passed]
+      color: rank
+      interval: median
+      layout: compact
+      fold: { rows: open, columns: 3 }
+      headers: horizontal
+  - type: chart
+    name: Progress by dataset
+    from: task_results
+    order: [n, iteration, dataset_split, kind, task, value]
+    chart:
+      layer:
+        - mark: { type: line, point: true, strokeWidth: 2 }
+          encoding:
+            x: { field: n, type: quantitative, title: iteration (first dev evaluation order), axis: { tickMinStep: 1 } }
+            y: { field: value, type: quantitative, aggregate: median, scale: { type: log }, title: "median over each dataset's tasks (log)" }
+            color: { field: dataset_split, type: nominal, title: dataset · split }
+            tooltip: [{ field: n, title: iteration }, { field: dataset_split, title: dataset · split }, { field: value, aggregate: median, format: ".4f", title: median }]
+  - type: table
+    name: Task rows
+    from: task_results
+    order: [iteration, verdict, deployment, split, dataset, kind, task, value, gates_passed, gates_failed]
+    groupBy: { property: iteration }
+    fold: closed
+    display: { verdict: status }

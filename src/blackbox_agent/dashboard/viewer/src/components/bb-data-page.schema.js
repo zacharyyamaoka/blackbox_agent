@@ -10,6 +10,8 @@ export default {
     { id: 'slice', type: 'select', label: 'Rows (state.json slice)', default: 'iterations', options: ROW_SLICES.map((s) => ({ value: s, label: s })) },
     { id: 'base', type: 'url', label: '.base file beside the page', default: '' },
     { id: 'base_text', type: 'textarea', label: 'Or the .base text inline', default: '' },
+    { id: 'also', type: 'text', label: 'Other slices a view reads (`from:`)', default: '',
+      info: 'comma separated, e.g. task_results: a .base view with `from: task_results` draws that slice, joined to these rows by the file\'s `links:` (CONTRACT §28)' },
     { id: 'view', type: 'text', label: 'Preset to open first (empty = the first)', default: '' },
     { id: 'filters', type: 'text', label: 'Extra filter (a Bases expression, ANDed with the file\'s)', default: '',
       info: 'e.g. kind == "iteration" over costs (CONTRACT §16.3)' },

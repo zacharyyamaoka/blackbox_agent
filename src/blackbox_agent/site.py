@@ -292,7 +292,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False, *, hando
             record["nav"] = "stock"
         from blackbox_agent import handoff
 
-        handoff.write(box, sha, set(tracked), site, who, include_context=local or handoff_local)
+        stock_handoff = handoff.write(box, sha, set(tracked), site, who, include_context=local or handoff_local)
         shutil.copytree(need(DASHBOARD, "the dashboard"), site / "dashboard",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         record["simreal"] = _simreal(site, record)
@@ -316,7 +316,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False, *, hando
             side = sources.private_side(links, who["repo"], lambda: sources.box_text(box, sha) + "\n"
                                         + sources.package_text(TEMPLATE, FOLD.parent), here)
             prefix = f"https://github.com/{who['owner']}/{who['repo']}/blob/{sha}/" if who["owner"] else ""
-            hits = [h for h in sources.leak_scan(site, side, public_blob_prefix=prefix)
+            hits = [h for h in sources.leak_scan(site, side, public_blob_prefix=prefix, stock_handoff=stock_handoff)
                     if "a private name" in h or "private text" in h]
             if hits:
                 raise BoxError(f"refusing to write a public build: {len(hits)} private item(s) would leave this machine "

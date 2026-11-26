@@ -17,6 +17,7 @@
       "type": "bb-data-page",
       "settings": {
         "slice": "iterations",
+        "also": "task_results",
         "base": "iterations.base",
         "view": "Iterations",
         "height": 640,

@@ -38,6 +38,44 @@ export function rowsOf(list) {
   });
 }
 
+/** The other slices the page's settings name (`also`, comma separated): the datasets a .base view reads with `from:`. */
+export const alsoOf = (s) => String((s && s.also) || '').split(',').map((x) => x.trim()).filter(Boolean);
+
+/** A .base `links:` entry between `other` and `own` as [their property, our property], either way round; null when none. */
+export function linkOf(links, own, other) {
+  for (const l of Array.isArray(links) ? links : []) {
+    if (!l || typeof l.from !== 'string' || typeof l.to !== 'string') continue;
+    const [a, ap] = [l.from.slice(0, l.from.indexOf('.')), l.from.slice(l.from.indexOf('.') + 1)];
+    const [b, bp] = [l.to.slice(0, l.to.indexOf('.')), l.to.slice(l.to.indexOf('.') + 1)];
+    if (a === other && b === own) return [ap, bp];
+    if (a === own && b === other) return [bp, ap];
+  }
+  return null;
+}
+
+/** CONTRACT §28: one rail over two grains. Each row of another slice gains its linked row's fields (by the .base's
+    `links:`, e.g. task_results.solution -> iterations.id) that the other slice never carries itself, so a rail facet on
+    verdict, family or dev error means the same on a task result as on its iteration. WHY in the host, not data-ui: a
+    data-ui link is a semi-join that never adds a column (its CONTRACT §10/§17), and `<data-views>` has no `from:` of its
+    own yet (a gap named in CONTRACT §28.4); objects and `_` keys stay with their own row. */
+export function joinRows(rows, own, link) {
+  if (!link) return rows;
+  const [theirs, ours] = link;
+  const by = new Map(own.map((r) => [String(r[ours]), r]));
+  const keys = new Set();
+  for (const r of rows) for (const k of Object.keys(r)) keys.add(k);
+  return rows.map((r) => {
+    const o = by.get(String(r[theirs]));
+    if (!o) return r;
+    const out = { ...r };
+    for (const [k, v] of Object.entries(o)) {
+      if (keys.has(k) || k === 'id' || k.startsWith('_') || (v && typeof v === 'object' && !Array.isArray(v))) continue;
+      out[k] = v;
+    }
+    return out;
+  });
+}
+
 export class BBDataPage extends BBElement {
   static schema = schema;
   static css = `
@@ -52,7 +90,7 @@ bb-data-page [data-id]:has(.dv-state[data-state="obsolete"]) { opacity: .55; }
 bb-data-page [data-id]:has(.dv-state[data-state="obsolete"]) :is(td, .dv-cell, .dv-card-title) { text-decoration: line-through; }
 `;
 
-  readList() { return [this.settings.slice]; }
+  readList() { return [this.settings.slice, ...alsoOf(this.settings)]; }
 
   async render() {
     const s = this.settings;
@@ -68,7 +106,15 @@ bb-data-page [data-id]:has(.dv-state[data-state="obsolete"]) :is(td, .dv-cell, .
     let text = s.base_text || (s.base ? await this.context.asset(s.base) : '');
     const doc = text ? core.parseBase(text) : stockBase(list, s.slice);
     delete doc.data; // WHY: hosted unchanged; the rows are the slice's, whatever file the preset was written against
-    if (relabelObjective(doc, this.data.objective)) text = core.stringifyBase(doc);
+    let changed = relabelObjective(doc, this.data.objective);
+    // CONTRACT §28: a view that reads another slice (`from:`) is offered only when the state holds that slice's rows
+    const others = {};
+    for (const name of alsoOf(s)) { const l = get(this.data, name); if (Array.isArray(l) && l.length) others[name] = l; }
+    if (Array.isArray(doc.views) && doc.views.some((v) => v && v.from && v.from !== s.slice && !others[v.from])) {
+      doc.views = doc.views.filter((v) => !(v && v.from && v.from !== s.slice && !others[v.from]));
+      changed = true;
+    }
+    if (changed) text = core.stringifyBase(doc);
     // CONTRACT §16.3: the page's own filter ANDed with the file's (data-ui's andFilters), so a preset written against
     // iterations-only data is hosted unchanged over a slice that also holds ablation runs (costs: kind == "iteration")
     if (s.filters) doc.filters = core.andFilters(doc.filters, s.filters);
@@ -90,7 +136,28 @@ bb-data-page [data-id]:has(.dv-state[data-state="obsolete"]) :is(td, .dv-cell, .
     if (notes) views.pageRenderer = notePages(views, rows);
     // a note's panel is headed by its title, as Obsidian heads it by its name
     const titleProperty = notes && rows.every((r) => typeof r.title === 'string') ? 'title' : 'id';
-    views.data = { id: `bb/${this.data.box || 'box'}/${s.slice}`, title: s.slice, titleProperty, rows };
+    const sets = { [s.slice]: { id: `bb/${this.data.box || 'box'}/${s.slice}`, title: s.slice, titleProperty, rows } };
+    for (const [name, list] of Object.entries(others)) {
+      const theirs = joinRows(rowsOf(deriveRows(name, list)), rows, linkOf(doc.links, s.slice, name));
+      sets[name] = { id: `bb/${this.data.box || 'box'}/${name}`, title: name, titleProperty: 'id', rows: theirs };
+    }
+    // the dataset a view reads: its `from:`, else the page's slice. data-views keeps the open view and the rail's
+    // filters across a data swap only when told: the filters are put back by hand (routing round data-ui, §28.4)
+    const fromOf = (name) => { const v = (doc.views || []).find((x) => x && x.name === name); return v && v.from && sets[v.from] ? v.from : s.slice; };
+    let on = fromOf(s.view || (doc.views && doc.views[0] && doc.views[0].name));
+    views.data = sets[on];
+    if (Object.keys(sets).length > 1) {
+      views.addEventListener('data-views-change', (e) => {
+        const want = fromOf(e.detail && e.detail.name);
+        if (want === on) return;
+        on = want;
+        const keep = views.filters;
+        views.data = sets[want];
+        if (keep) views.filters = keep;
+        this.dataset.from = want;
+      });
+      this.dataset.from = on;
+    }
     const row = document.createElement('div');
     row.className = 'bbd';
     if (s.facets) {
