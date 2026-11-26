@@ -47,6 +47,15 @@ export async function loadViews() {
   return core;
 }
 
+/** <data-dashboard> (data-ui PEP 0004: a .base with `layout:`, each panel a stock <data-views>), drawn by a host with
+    load(base, datasets). Goals round 3's full-page goal (CONTRACT §27). */
+export async function loadDashboard() {
+  const core = await loadViews();
+  await load('dashboard.js');
+  await customElements.whenDefined('data-dashboard');
+  return core;
+}
+
 /** data-ui's Obsidian-parity note viewer (like_obsidian_md_viewer, vendored with data-ui at like-obsidian/): its module
     ({mountNote}) once its stylesheet has loaded. WHY the same <link data-dv-note-css> data-ui's own note page adds: one
     stylesheet for the page, whichever of the two opens a note first (data-ui CONTRACT §54). */

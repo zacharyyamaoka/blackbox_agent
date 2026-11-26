@@ -13,6 +13,7 @@ import bbIdeaViews from './bb-idea-views.schema.js';
 import bbKpiStrip from './bb-kpi-strip.schema.js';
 import bbLineage from './bb-lineage.schema.js';
 import bbLinks from './bb-links.schema.js';
+import bbLiveAgents from './bb-live-agents.schema.js';
 import bbMarkdown from './bb-markdown.schema.js';
 import bbNav from './bb-nav.schema.js';
 import bbNeedsYou from './bb-needs-you.schema.js';
@@ -24,4 +25,4 @@ import bbSolutionDetail from './bb-solution-detail.schema.js';
 import bbSpec from './bb-spec.schema.js';
 import customHtml from './custom-html.schema.js';
 
-export default [bbAblation, bbCatalog, bbDataPage, bbEvidence, bbFrontier, bbGateMatrix, bbGates, bbGoals, bbHeadliner, bbIdeaPreview, bbIdeaViews, bbKpiStrip, bbLineage, bbLinks, bbMarkdown, bbNav, bbNeedsYou, bbNotes, bbPage, bbSimreal, bbSiteNav, bbSolutionDetail, bbSpec, customHtml];
+export default [bbAblation, bbCatalog, bbDataPage, bbEvidence, bbFrontier, bbGateMatrix, bbGates, bbGoals, bbHeadliner, bbIdeaPreview, bbIdeaViews, bbKpiStrip, bbLineage, bbLinks, bbLiveAgents, bbMarkdown, bbNav, bbNeedsYou, bbNotes, bbPage, bbSimreal, bbSiteNav, bbSolutionDetail, bbSpec, customHtml];

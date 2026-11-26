@@ -15,7 +15,7 @@ uvx --from git+https://github.com/zacharyyamaoka/blackbox_agent@v0 blackbox --he
 
 | Command | What it does |
 |---|---|
-| `blackbox build --box <dir> --out <dir>` | folds the box's `HEAD` into `data/state.json`, then writes its whole site: the landing, the dashboard, `nav.json`, its tabs and its other site files |
+| `blackbox build --box <dir> --out <dir>` | folds the box's `HEAD` into `data/state.json`, then writes its whole site: the landing, the dashboard, `nav.json`, its tabs and its other site files. `--handoff-local` includes committed operator context for a loopback server. |
 | `blackbox serve --box <dir> [--port N]` | the same build, in a temporary folder, served on `127.0.0.1`; its first line is the URL (8765, or a free port when 8765 is busy; a busy `--port` you name fails and says so) |
 | `blackbox new <dir>` | a box skeleton: `OBJECTIVES.md`, `AGENTS.md`, an empty `ledger.jsonl`, `site/nav.json`, the Pages workflow; committed on `main` |
 | `blackbox check --box <dir>` | is the box in the format (its required paths, every named file a link, every relative link landing, every `triggers.jsonl` line a `bb-trigger/1` row and every done trigger carrying the evidence its action's acceptance names, every `actions/` note a new action, every feedback note's keys as defined, every `needs.jsonl` line a `vt-need/1` question with no default where nothing may answer for him, every decided `actions.jsonl` row and review in the format), does its site build, does every `nav.json` link land on a page, what does the package replace |

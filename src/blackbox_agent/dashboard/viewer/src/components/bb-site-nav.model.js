@@ -42,6 +42,7 @@ export function validate(doc) {
     if (!str(site.name)) out.push('site.name: the box\'s name');
     if (site.landing !== undefined && !(str(site.landing) && REL.test(site.landing))) out.push(`site.landing: ${JSON.stringify(site.landing)} is not a relative path inside the site`);
     if (site.repo !== undefined && !/^https?:\/\/\S+$/.test(String(site.repo))) out.push(`site.repo: ${JSON.stringify(site.repo)} is not an http(s) URL`);
+    if (site.handoff !== undefined && site.handoff !== 'data/agent-handoff.md') out.push('site.handoff: expected data/agent-handoff.md');
   }
   if (doc.layout !== undefined && !LAYOUTS.includes(doc.layout)) out.push(`layout: ${JSON.stringify(doc.layout)} is ${LAYOUTS.map((l) => `"${l}"`).join(' or ')}`);
   const groups = Array.isArray(doc.groups) ? doc.groups : [];
@@ -127,7 +128,8 @@ export function makeModel(doc, navUrl, { own = [], pages = pagesFor(null) } = {}
     return dash;
   });
   const home = dashboards.find((d) => d.id === doc.site.home) || dashboards[0];
-  return { site: { name: doc.site.name, landing: at(doc.site.landing || 'index.html'), repo: doc.site.repo || null, home: home.id },
+  return { site: { name: doc.site.name, landing: at(doc.site.landing || 'index.html'), repo: doc.site.repo || null,
+    handoff: doc.site.handoff ? at(doc.site.handoff) : null, home: home.id },
     layout: doc.layout || LAYOUTS[0], groups: doc.groups, dashboards, overflow: { label: 'More', ...(doc.overflow || {}) } };
 }
 

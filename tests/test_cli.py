@@ -70,6 +70,56 @@ class FreshBox(unittest.TestCase):
         landing = (self.root / "site" / "index.html").read_text()
         self.assertIn('"./dashboard/viewer/src/components/bb-site-nav.js": "./overrides/bb-site-nav.js"', landing)
 
+    def test_handoff_copies_committed_context_only_on_loopback_builds(self):
+        display = 'Fixture: Δ — "Shelf" [A]'
+        nav = json.loads((self.box / "site" / "nav.json").read_text())
+        nav["site"]["name"] = display
+        self.commit({
+            "AGENTS.md": "committed operator instructions\n",
+            "goals/G1-next.md": "---\nvibe-goal: Committed fixture milestone\n---\n",
+            "ledger.jsonl": "\n",
+            "site/nav.json": json.dumps(nav),
+        }, "operator brief")
+        (self.box / "AGENTS.md").write_text("uncommitted private draft\n")
+        (self.box / "goals" / "G2-draft.md").write_text("uncommitted goal\n")
+        for include in [False, True]:
+            with self.subTest(include=include):
+                site = self.root / "site"
+                build(self.box, site, handoff_local=include)
+                nav = json.loads((site / "nav.json").read_text())
+                prompt = (site / nav["site"]["handoff"]).read_text()
+                self.assertEqual(nav["site"]["name"], display)
+                lines = prompt.splitlines()
+                self.assertEqual(lines[0], f"# Drive {display}")
+                self.assertTrue(lines[2].startswith("Ensure the chat is named: "))
+                self.assertEqual(json.loads(lines[2].split(": ", 1)[1]), display)
+                self.assertIn("set this chat's title", prompt)
+                self.assertIn("vt bind --box . --peers --json", prompt)
+                self.assertIn("blackbox skill", prompt)
+                self.assertIn("vt box-work claim <idea> --box .", prompt)
+                self.assertIn("vt box-work done <idea> --box .", prompt)
+                self.assertIn("https://github.com/someone/some_agent", prompt)
+                # The same clipboard must steer each host with its own tools, including on public builds.
+                operating = prompt.split("## AGENTS.md at the dashboard snapshot", 1)[0]
+                shared, codex, claude = re.split(r"(?m)^### (?:Codex|Claude Code)\n", operating)
+                self.assertIn("Launch subagents for independent", shared)
+                self.assertIn("verify and\n   integrate their results", shared)
+                self.assertIn("claim the next eligible idea", shared)
+                self.assertIn("Leave a matching paused goal paused", shared)
+                for control in ("`get_goal`", "`create_goal`", "`update_goal`", "native Codex subagents", "automation tools"):
+                    self.assertIn(control, codex)
+                    self.assertNotIn(control, claude)
+                for control in ("`GetGoal`", "`SetGoal`", "`/goal <completion condition>`", "`Agent` tool", "`/loop`"):
+                    self.assertIn(control, claude)
+                for host in (codex, claude):
+                    self.assertIn("recurring work I explicitly requested", host)
+                    self.assertIn("next run", host)
+                self.assertIn("read-only or one-off assignment", prompt)
+                self.assertEqual("committed operator instructions" in prompt, include)
+                self.assertEqual("Committed fixture milestone" in prompt, include)
+                self.assertNotIn("uncommitted private draft", prompt)
+                self.assertNotIn("uncommitted goal", prompt)
+
     def test_an_override_naming_no_stock_component_is_refused(self):
         (self.box / "site" / "overrides").mkdir(parents=True)
         (self.box / "site" / "overrides" / "bb-nothing.js").write_text("export {};\n")

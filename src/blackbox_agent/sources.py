@@ -36,6 +36,7 @@ in a shipped file; its one documented exception is the placeholder line above.
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import subprocess
@@ -447,7 +448,18 @@ def private_side(links: dict | None, box: str, allowed_text="", m: Machine | Non
 SKIP_PARTS = ("dashboard/",)  # the package's own viewer: it carries no box data
 
 
-def leak_scan(tree: Path, side: PrivateSide | None = None) -> list[str]:
+def _without_public_provenance(text: str, prefix: str) -> str:
+    """For the prose scan, remove only the public prefix from revision-pinned links the fold generates."""
+    state = json.loads(text)
+    for section, key in (("ideas", "source"), ("analysis", "url")):
+        for row in state.get(section) or []:
+            url = row.get(key)
+            if isinstance(url, str) and url.startswith(prefix):
+                row[key] = url.removeprefix(prefix)
+    return json.dumps(state, ensure_ascii=False)
+
+
+def leak_scan(tree: Path, side: PrivateSide | None = None, *, public_blob_prefix: str = "") -> list[str]:
     """Every leak in a built site, one line each: a private name or private text (this machine's `side`), a home path,
     an `obsidian:` URI. The package's own dashboard/ is not read: it holds no box data."""
     side = side or PrivateSide()
@@ -466,7 +478,12 @@ def leak_scan(tree: Path, side: PrivateSide | None = None) -> list[str]:
             if OBSIDIAN.search(line):
                 hits.append(f"{rel}:{n}: an obsidian: link")
         if side.shingles:
-            found = shingles(text) & side.shingles
+            # WHY only these fields of the fold: a public GitHub URL's host and repo
+            # can tokenize to six words in a private note. Keep scanning every URL
+            # suffix and any prose with those same words, as well as all raw names.
+            prose = (_without_public_provenance(text, public_blob_prefix)
+                     if rel == "data/state.json" and public_blob_prefix and public_blob_prefix in text else text)
+            found = shingles(prose) & side.shingles
             if found:
                 hits.append(f"{rel}: private text ({len(found)} run(s) of {SHINGLE} words from a private note)")
     return hits

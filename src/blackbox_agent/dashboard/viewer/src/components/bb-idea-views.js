@@ -19,6 +19,7 @@ import { fill } from '../core/context.js';
 import { md } from '../core/inline.js';
 import schema from './bb-idea-views.schema.js';
 import { splitOf } from '../core/slices.js';
+import { watchIdeaWork } from './bb-idea-work.js';
 
 /* ── the Oct 3 lens board's layout engine (proposals-ideas-v2/_shared/lanes/graph.js, verbatim from here to the next
    rule; its own header says where it came from) ─────────────────────────────────────────────────────────────────── */
@@ -921,6 +922,13 @@ bb-idea-views .bbiv-goal code { font-family: var(--bb-mono); font-size: 12px; }
 bb-idea-views .bbiv-goal-links { display: inline-flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
 bb-idea-views .bbiv-goal-links button { font: inherit; color: var(--bb-accent); background: none; border: 0; padding: 0; cursor: pointer; }
 bb-idea-views .bbiv-goal-links button:hover { text-decoration: underline; } /* WHY no display: data-views is data-ui's flex column; block spilled the table out of its frame */
+bb-idea-views .bbiv-work-notice { margin: 0 0 10px; color: var(--bb-warn); font-size: 13px; }
+bb-idea-views .bbiv-work { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; padding-top: 8px; }
+bb-idea-views .bbiv-work label { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+bb-idea-views .bbiv-work select { min-width: 0; color: inherit; font: inherit; background: var(--dv-bg); border: 1px solid var(--dv-border); border-radius: 6px; padding: 4px 6px; }
+bb-idea-views .bbiv-work button + button { margin-left: 6px; }
+bb-idea-views .bbiv-work-result { margin: 0; flex-basis: 100%; font-size: 12px; overflow-wrap: anywhere; }
+bb-idea-views .bbiv-work-result:empty { display: none; }
 @media (max-width: 640px) { bb-idea-views { --bbiv-h: 560px; } }
 bb-idea-views .dv-view-lanes { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 bb-idea-views .dv-lanes-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 2px 8px; font-size: 12.5px; color: var(--dv-muted); }
@@ -984,6 +992,8 @@ bb-idea-views .dv-lanes-empty { position: absolute; font-size: 12px; color: var(
 `;
 
   async render() {
+    this.teardown();
+    const generation = this._ideasRender = Symbol();
     const ideas = this.data.ideas;
     if (!Array.isArray(ideas) || !ideas.length) return this.empty();
     const s = this.settings;
@@ -993,13 +1003,13 @@ bb-idea-views .dv-lanes-empty { position: absolute; font-size: 12px; color: var(
     wait.textContent = 'Loading the idea views…';
     this.replaceChildren(wait);
     const core = await loadViews();
+    if (this._ideasRender !== generation) return;
     registerLanes(core);
     const rows = viewRows(ideas);
     const its = this.data.iterations || [];
     const holder = its.length ? its[its.length - 1].best_holder : null;
     const focus = holder ? rows.find((r) => (r.solution_ids || []).includes(holder))?.id || null : null;
     const doc = baseDoc(rows, s, { laneState: s.gate_state ? laneStates(rows, this.data) : null, focus });
-    const text = `# ${box}: the idea queue, PICKS.md's Lens board (proposals-ideas-v2 01) as bb-idea-views draws it\n${core.stringifyBase(doc)}`;
     const views = document.createElement('data-views');
     views.id = `bbiv-${++uid}`;
     views.setAttribute('no-url', '');
@@ -1014,6 +1024,7 @@ bb-idea-views .dv-lanes-empty { position: absolute; font-size: 12px; color: var(
       // WHY create, connect, then set .card: a <data-kpi> made before kpi.js defined it would keep .card as a plain
       // property and never draw (bb-kpi-strip connects first for the same reason)
       await loadKpi();
+      if (this._ideasRender !== generation) return;
       const fuel = document.createElement('div');
       fuel.className = 'bbiv-fuel';
       fuel.setAttribute('role', 'group');
@@ -1037,13 +1048,29 @@ bb-idea-views .dv-lanes-empty { position: absolute; font-size: 12px; color: var(
       this.dataset.drew = e.detail.type;
       wait.remove();
     }, { once: true });
-    views.baseText = text;
-    views.base = core.parseBase(text);
+    const setBase = (model) => {
+      // WHY render the assembled document directly: a rung is authored text, and converting it to YAML and back
+      // can corrupt embedded punctuation before the stock board receives it.
+      views.base = model;
+    };
+    setBase(doc);
     // WHY the settings in the data id: data-ui keeps a reader's view changes per data id, so a page.json edit (a new
     // preset, lens or split) starts fresh instead of reopening yesterday's tweaks
-    views.data = { id: `bb/${box}/ideas/${s.preset}.${s.lens}.${s.cards}.${+s.split}.${+s.gate_state}${goal ? `.${goal.value}` : ''}`, title: `${box} ideas`,
+    const dataset = { id: `bb/${box}/ideas/${s.preset}.${s.lens}.${s.cards}.${+s.split}.${+s.gate_state}${goal ? `.${goal.value}` : ''}`, title: `${box} ideas`,
       titleProperty: 'title', linkProperty: 'source', properties: PROPERTIES, rows };
-    wrap.append(views);
+    views.data = dataset;
+    const notice = document.createElement('p');
+    notice.className = 'bbiv-work-notice';
+    notice.setAttribute('role', 'status');
+    notice.hidden = true;
+    wrap.append(notice, views);
+    this._stopIdeaWork = watchIdeaWork(views, this.context, dataset, doc, setBase, notice);
+  }
+
+  teardown() {
+    this._ideasRender = null;
+    this._stopIdeaWork?.();
+    this._stopIdeaWork = null;
   }
 
   /** "G2 Ready for the real arm: its 4 ideas, in plan order · ← its goal · Show all 32 ideas" (02's banner). */

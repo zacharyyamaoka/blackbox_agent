@@ -70,7 +70,9 @@ PAGES_LINE = re.compile(r"https://([A-Za-z0-9-]+)\.github\.io/([A-Za-z0-9_.-]+)/
 # "I don't like how long it takes to switch between workspaces.. can you not like cache the result or something?"
 SITE_CACHE_WORKER = "blackbox-sw.js"
 SITE_CACHE_MODULE = Path("dashboard") / "viewer" / "src" / "core" / "site-cache.js"
-SITE_CACHE_LINE = ("export const SITE_CACHE = null;", "export const SITE_CACHE = 'on';")
+SITE_CACHE_LINE = "export const SITE_CACHE = null;"
+# WHY opt-in (0.1.19): inside Vibe Tracks the worker made a warm switch slower, median 763 ms (0.1.12) -> 1142 ms (0.1.18),
+# its agent's measurement on six real boxes; so a default build turns the switch 'off' (it removes an installed worker)
 IMPORTMAP = re.compile(r'(<script\b[^>]*\btype=["\']importmap["\'][^>]*>)(.*?)(</script>)', re.S | re.I)
 
 
@@ -188,7 +190,8 @@ def fold(box: Path, sha: str, cwd: Path, junit: str | None, junit_dir: str | Non
     return state
 
 
-def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
+def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False, *, handoff_local: bool = False,
+          site_cache: bool = False) -> dict:
     """Write the box's site at `ref` into `out` (replacing an earlier build there); returns blackbox-build.json.
 
     Public by default: a box's private sources (sources.py) are their labels and quotes only, and on a machine with a
@@ -207,7 +210,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
     record = {"schema": "blackbox-build/1", "package": f"blackbox-agent {__version__}", "box": who["name"],
               "repo": f"{who['owner']}/{who['repo']}" if who["owner"] else who["repo"], "ref": sha,
               "landing": None, "nav": None, "simreal": None, "overrides": [], "dropped": [], "junit": None, "kept": [],
-              "carried": [], "links": None, "site_cache": None, "digest": None}
+              "carried": [], "links": None, "site_cache": None, "preload": None, "digest": None}
     with tempfile.TemporaryDirectory(prefix="blackbox-build-") as tmp:
         root = Path(tmp)
         site = root / "site"
@@ -287,10 +290,13 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
         else:
             (site / "nav.json").write_text(fill(need(TEMPLATE / "site" / "nav.json", "nav.json").read_text(), values, "json"))
             record["nav"] = "stock"
+        from blackbox_agent import handoff
+
+        handoff.write(box, sha, set(tracked), site, who, include_context=local or handoff_local)
         shutil.copytree(need(DASHBOARD, "the dashboard"), site / "dashboard",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         record["simreal"] = _simreal(site, record)
-        _site_cache(site, record)
+        _site_cache(site, record, site_cache)
 
         components = _overrides(site)
         record["overrides"] = sorted(components + ([LANDING] if record["landing"] != "stock" else []))
@@ -298,6 +304,7 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
             _wire_overrides(site, components)
         if record["overrides"]:
             _count_overrides(site, record["overrides"])
+        record["preload"] = _preload(site)
         (site / ".nojekyll").write_text("")
         record["digest"] = digest(site)
         (site / RECORD).write_text(json.dumps(record, indent=1) + "\n")
@@ -308,7 +315,9 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
             # which may share a run of words with a note: the stock landing did, on blackbox_agent_agent)
             side = sources.private_side(links, who["repo"], lambda: sources.box_text(box, sha) + "\n"
                                         + sources.package_text(TEMPLATE, FOLD.parent), here)
-            hits = [h for h in sources.leak_scan(site, side) if "a private name" in h or "private text" in h]
+            prefix = f"https://github.com/{who['owner']}/{who['repo']}/blob/{sha}/" if who["owner"] else ""
+            hits = [h for h in sources.leak_scan(site, side, public_blob_prefix=prefix)
+                    if "a private name" in h or "private text" in h]
             if hits:
                 raise BoxError(f"refusing to write a public build: {len(hits)} private item(s) would leave this machine "
                                f"({'; '.join(hits[:5])}); `blackbox check` names the box's lines (private-ref)")
@@ -319,22 +328,26 @@ def build(box: Path, out: Path, ref: str = "HEAD", local: bool = False) -> dict:
     return record
 
 
-def _site_cache(site: Path, record: dict) -> None:
-    """The site cache: the worker at the site's root, the site bar's registration on in the build's copy. A box's own
-    site/blackbox-sw.js is replaced (the name is the package's) and said so. A dashboard without the worker (a test's stub
-    dashboard) builds a site without the cache, which works as before; record["site_cache"] says which."""
+def _site_cache(site: Path, record: dict, enabled: bool) -> None:
+    """The site cache's switch in the build's copy of the site bar: 'on' with the worker at the site's root when the build
+    asks for it (--site-cache), else 'off', which unregisters a worker an earlier build installed and writes none. A box's
+    own site/blackbox-sw.js is replaced when on (the name is the package's) and said so. A dashboard without the switch (a
+    test's stub dashboard) builds as before; record["site_cache"] names the worker when on."""
     source, module = site / "dashboard" / "viewer" / "site" / SITE_CACHE_WORKER, site / SITE_CACHE_MODULE
     record["site_cache"] = None
-    if not (source.is_file() and module.is_file()):
+    if not module.is_file():
         return
     text = module.read_text()
-    if text.count(SITE_CACHE_LINE[0]) != 1:
-        raise BoxError(f"{SITE_CACHE_MODULE}: no `{SITE_CACHE_LINE[0]}` line to turn on; reinstall the package")
+    if text.count(SITE_CACHE_LINE) != 1:
+        raise BoxError(f"{SITE_CACHE_MODULE}: no `{SITE_CACHE_LINE}` line to set; reinstall the package")
+    if not enabled:
+        module.write_text(text.replace(SITE_CACHE_LINE, "export const SITE_CACHE = 'off';"))
+        return
     worker = site / SITE_CACHE_WORKER
     if worker.exists():
         record["dropped"].append(f"site/{SITE_CACHE_WORKER} (the box's own; the package's site cache takes the name)")
-    shutil.copyfile(source, worker)
-    module.write_text(text.replace(*SITE_CACHE_LINE))
+    shutil.copyfile(need(source, "the site cache"), worker)
+    module.write_text(text.replace(SITE_CACHE_LINE, "export const SITE_CACHE = 'on';"))
     record["site_cache"] = SITE_CACHE_WORKER
 
 
@@ -405,6 +418,64 @@ def _wire_overrides(site: Path, tags: list[str]) -> None:
         imports = {_relative(f"dashboard/viewer/src/components/{t}.js", page_dir): _relative(f"overrides/{t}.js", page_dir)
                    for t in tags}
         page.write_text(with_import_map(text, imports))
+
+
+# a static import or re-export at the start of a statement: import x from '…', import {a,\n b} from '…', import '…',
+# export * from '…'. WHY anchored to a statement start: a comment that quotes an import (` * import x from 'y'`) is not one
+STATIC_IMPORT = re.compile(r"""(?:^|[;}])[ \t]*(?:import|export)\s*(?:[\w$*{}\s,]+?\s*from\s*)?['"]([^'"\n]+)['"]""", re.M)
+MODULE_SCRIPT = re.compile(r"""<script\b[^>]*\btype=["']module["'][^>]*\bsrc=["']([^"']+)["'][^>]*>""", re.I)
+
+
+def _preload(site: Path) -> int | None:
+    """One <link rel="modulepreload"> per module the dashboard reaches by static import, before its module script.
+
+    WHY (Vibe Tracks' agent, 2026-11-25, CDP on three real boxes): a warm dashboard load spends its time on the module
+    waterfall, not bytes or parsing (blackbox_agent_agent: 632 ms to ready, 95 requests, 27 KB of JS, script 193 ms): the
+    browser finds each import level only after its parent arrives and parses, so ~6 levels of round trips run one after
+    another. Listed up front, every request goes out at once.
+    The page's import map is read and kept: an overridden component is preloaded at the URL the map sends it to (the
+    box's file), never the stock URL, which the browser would then fetch as well; the override's own imports (the stock
+    module at …?stock) join the closure. Dynamic import() is not followed: those load on demand. Returns the count."""
+    page_path = site / "dashboard" / "index.html"
+    if not page_path.is_file():
+        return None
+    page = page_path.read_text()
+    m = IMPORTMAP.search(page)
+    imap: dict[str, str] = {}
+    if m:
+        for k, v in (json.loads(m.group(2) or "{}").get("imports") or {}).items():
+            imap[posixpath.normpath(posixpath.join("dashboard", k))] = posixpath.normpath(posixpath.join("dashboard", v))
+    entries = [posixpath.normpath(posixpath.join("dashboard", src)) for src in MODULE_SCRIPT.findall(page)
+               if "://" not in src and not src.startswith("/")]
+    seen: list[str] = []
+    todo = list(reversed(entries))
+    while todo:
+        url = todo.pop()
+        if url in seen:
+            continue
+        seen.append(url)
+        path = site / url.split("?")[0]
+        if not path.is_file():
+            continue
+        here = posixpath.dirname(url.split("?")[0])
+        for spec in STATIC_IMPORT.findall(path.read_text(errors="replace")):
+            if not spec.startswith((".", "/")) or spec.startswith("//"):
+                continue  # a bare name or another origin: not a file of this site
+            base, _, query = spec.partition("?")
+            target = posixpath.normpath(posixpath.join(here, base)) if not base.startswith("/") else None
+            if target is None or target.startswith(".."):
+                continue
+            target = imap.get(target, target) if not query else target  # …?stock is the map's way past itself
+            todo.append(target + (f"?{query}" if query else ""))
+    links = [u for u in seen if (site / u.split("?")[0]).is_file()]  # the entry too: the same URL, fetched once
+    if not links:
+        return 0
+    rel = lambda u: posixpath.relpath(u.split("?")[0], "dashboard") + ("?" + u.split("?", 1)[1] if "?" in u else "")
+    block = "".join(f'<link rel="modulepreload" href="{html.escape(rel(u))}">\n' for u in links)
+    first = MODULE_SCRIPT.search(page)
+    at = first.start() if first else page.lower().rfind("</body>")
+    page_path.write_text(page[:at] + block + page[at:])
+    return len(links)
 
 
 def _count_overrides(site: Path, overrides: list[str]) -> None:

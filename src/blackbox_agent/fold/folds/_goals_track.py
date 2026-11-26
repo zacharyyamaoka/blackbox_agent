@@ -363,6 +363,52 @@ def checklist_track(goal: dict, lines: list[dict], strips: list[dict], steps: di
             "word": word, "tone": tone, "says": says}
 
 
+def planned_check(goal: dict, tracks: list[dict], strips: list[dict]) -> dict:
+    """Round 3 (CONTRACT §27): the goal's Planned line as '% of the way' and boxes ticked, per buffer, from set: each
+    number at its Planned value (the fold's lines[].planned: the ideas' By and Expect), each pass / fail box as it stood
+    at set until a planned idea bets it to pass ('- Expect: O1.1 → pass'). [[date, value, idea, by]] after the start."""
+    judged = [c for c in goal["criteria"] if not c.get("refusal")]
+    n = len(judged)
+    if not n:
+        return {"planned_pct": {b: [] for b in BUFFERS}, "planned_ticks": {b: [] for b in BUFFERS}}
+    by_key = {t["key"]: t for t in tracks}
+    fold_lines = {line["key"]: line for line in goal["lines"]}
+    strip_by = {s["key"]: s for s in strips}
+    out_pct, out_ticks = {}, {}
+    for b in BUFFERS:
+        steps = goal.get("planned_steps", {}).get(b, [])
+
+        def at(c, m, k):
+            t = by_key.get(c["key"])
+            if t is not None and t["kind"] == "line":
+                plan = (fold_lines.get(c["key"]) or {}).get("planned", {}).get(b) or []
+                vals = [p["value"] for p in plan if ts(p["date"]) <= ts(m)]
+                v = vals[-1] if vals else t.get("v_set")
+                if v is None:
+                    return 0, 0.0
+                if OPS[t["op"]](v, t["target"]):
+                    return 1, 1.0
+                v0, span_ = t["v_set"], t["v_set"] - t["target"]
+                return 0, max(0.0, min(0.999, (v0 - v) / span_)) if span_ else 0.0
+            s = strip_by.get(c["key"])
+            segs = [g for g in (s or {}).get("segments", []) if ts(g["from"]) <= ts(goal["set"])]
+            if segs and segs[-1]["pass"]:
+                return 1, 1.0
+            bet = any(st.get("bet") and st["bet"].split("→")[0].strip() == c["key"] and "→ pass" in st["bet"]
+                      for st in steps[:k])
+            return (1, 1.0) if bet else (0, 0.0)
+
+        moments = [(goal["set"], None, None)] + [(st["at"], st["id"], st["by"]) for st in steps]
+        pct, ticks = [], []
+        for k, (m, iid, by) in enumerate(moments):
+            res = [at(c, m, k) for c in judged]
+            tail = [iid, by] if iid else []
+            pct.append([m, round(100 * sum(r[1] for r in res) / n, 1), *tail])
+            ticks.append([m, sum(r[0] for r in res), *tail])
+        out_pct[b], out_ticks[b] = pct, ticks
+    return {"planned_pct": out_pct, "planned_ticks": out_ticks}
+
+
 # ---- the V5 timeline rows (the Timeline preset) ---------------------------------------------------------------------
 
 def timeline_rows(goal: dict, ideas: dict, b: str, clock: Clock, lane: str) -> list[dict]:
@@ -419,6 +465,7 @@ def goal_words(goal: dict, lines: list[dict], check: dict, b: str, clock: Clock,
     st = goal["status"]
     holds = [c for c in goal["criteria"] if c.get("refusal") is None and c["state"] != "pass"]
     refused = [c for c in goal["criteria"] if c.get("refusal")]
+    awaiting_benchmark = any(c["kind"] == "measurement" for c in refused)
     waits = [w["id"] for w in bu["waits_on_zach"]]
     # the tracking word: the goal's worst line or box, the fold's own pace words where it has them
     line_paces = [t.get("pace", {}).get(b) for t in lines if t["kind"] == "line"]
@@ -427,7 +474,8 @@ def goal_words(goal: dict, lines: list[dict], check: dict, b: str, clock: Clock,
         because = f"{clock.when(goal['met_at'])} by {goal['met_by']}, {span(clock.hours(goal['met_at'], goal['due']) * 60)} early"
     elif st == "cannot judge yet":
         word, tone = "can't judge yet", "muted"
-        because = "ruler v2 does not exist yet" + (f"; {len(waits)} asks on it are yours" if waits else "")
+        reason = "benchmark readings pending" if awaiting_benchmark else "ruler v2 does not exist yet"
+        because = reason + (f"; {len(waits)} asks on it are yours" if waits else "")
     elif st == "missed":
         word, tone, because = "missed", "bad", f"due {clock.when(goal['due'])}"
     elif "at risk" in line_paces:
@@ -443,7 +491,7 @@ def goal_words(goal: dict, lines: list[dict], check: dict, b: str, clock: Clock,
         estimate, gap = f"met {clock.when(goal['met_at'])}", f"{span(clock.hours(goal['met_at'], goal['due']) * 60)} early"
     elif st == "cannot judge yet":
         estimate = f"after your {len(waits)} answers, then {span(bu['buffered_minutes'])}" if waits else span(bu["buffered_minutes"])
-        gap = f"≤ {span(bu['slack_hours'] * 60)} to spare, if you answer now"
+        gap = "waiting for benchmark" if awaiting_benchmark else f"≤ {span(bu['slack_hours'] * 60)} to spare, if you answer now"
     else:
         estimate = clock.when(est_end) + (f" + {len(waits)} wait on you" if waits else "") if est_end else "nothing sized"
         gap = f"{span(bu['slack_hours'] * 60)} to spare" if bu["slack_hours"] >= 0 else f"{span(-bu['slack_hours'] * 60)} late"
@@ -451,7 +499,8 @@ def goal_words(goal: dict, lines: list[dict], check: dict, b: str, clock: Clock,
     time_left = f"{span(hl * 60)} left" if hl >= 0 else f"due {span(-hl * 60)} ago"
     holds_back = ", ".join(_short(c, objective) for c in holds) if holds else ("—" if not refused else "")
     if refused:
-        holds_back = (holds_back + "; " if holds_back else "") + ", ".join(_short(c, objective) for c in refused) + ": not before ruler v2"
+        holds_back = (holds_back + "; " if holds_back else "") + ", ".join(_short(c, objective) for c in refused)
+        holds_back += ": awaiting benchmark" if awaiting_benchmark else ": not before ruler v2"
     return {
         "name": f"{goal['id']} · {goal['title']}", "state": word, "tone": tone, "because": because,
         "tier": goal["tier"], "want_by": clock.when(goal["due"]), "set_at": clock.when(goal["set"]),
@@ -501,3 +550,4 @@ def enrich(goals: list[dict], ideas_rows: list[dict], as_of: str, counts: dict, 
         for b in BUFFERS:
             g["bottom_up"][b]["steps"] = steps[b]
         g["strips"], g["check"], g["words"], g["timeline"] = strips, check, words, timeline
+        g["planned_check"] = planned_check(g, tracks, strips)   # WHY not in `check`: check is pinned to round 2's model.json

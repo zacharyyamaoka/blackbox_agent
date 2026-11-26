@@ -31,6 +31,7 @@ The clock: `facts["as_of"]` (a fixture's), else the ref's commit time, so a re-f
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import statistics
@@ -135,12 +136,58 @@ def _estimate(goal: dict, box: dict, links: dict, ref: str, start_t: str, start_
     return {"readings": out, "end": bu["estimate_if_started_now"], "value": v}
 
 
-def lines_of(goal: dict, ev: dict, box: dict, links: dict, ids: dict, as_of: str, core) -> list[dict]:
+def schedule(goal: dict, box: dict, links: dict, buffer: float, retro: bool, as_of: str, core, bys: dict | None = None) -> list[dict]:
+    """Round 3's Planned line, its steps (CONTRACT §27): every idea on the goal's roadmap with a committed `- By:` lands
+    at that time (`by: true`); every other open agent idea lands where bottom-up puts it, Effort × buffer from now (from
+    set on a goal already met), drawn hollow (`by: false`). An idea done without a By had no planned date: left out.
+    Time order. `bys` overrides the ideas' By (the plan as it stood when the goal was set)."""
+    bys = {iid: (links.get(iid) or {}).get("by") for iid in goal["roadmap"]} if bys is None else bys
+    if retro:
+        fallback, t = {}, ts(goal["set"])
+        for iid in goal["roadmap"]:
+            m = goal["effort"].get(iid)
+            if m is None:
+                continue
+            s = t
+            t = t + timedelta(minutes=m * buffer)
+            fallback[iid] = {"start": s.isoformat(), "end": t.isoformat(), "dated": True}
+    else:
+        fallback = {st["id"]: st for st in core.bottom_up(goal, box, as_of, buffer)["steps"]}
+    ideas = {i["id"]: i for i in box["ideas"]["ideas"]}
+    out = []
+    for iid in goal["roadmap"]:
+        i = ideas.get(iid) or {}
+        if i.get("lane") == "human":
+            continue
+        if bys.get(iid):
+            out.append({"id": iid, "at": bys[iid], "by": True})
+        elif iid in fallback:
+            out.append({"id": iid, "at": fallback[iid]["end"], "by": False})
+    out.sort(key=lambda st: ts(st["at"]))
+    return out
+
+
+def planned_line(steps: list[dict], links: dict, ref: str, start_t: str, v0) -> list[dict]:
+    """[{date, value, idea?, by?, bet?}]: from where it stood at set, one step per scheduled idea, moved only by the
+    idea's own `- Expect:` bet on THIS line (02's rule; no bet: flat)."""
+    if v0 is None:
+        return []
+    v = v0
+    out = [{"date": start_t, "value": v, "label": "set"}]
+    for st in steps:
+        bet = (links.get(st["id"]) or {}).get("expect")
+        if bet and bet["kind"] == "pct" and bet["ref"] == ref:
+            v = v * (1 + (bet["lo"] + bet["hi"]) / 200)
+        out.append({"date": st["at"], "value": v, "idea": st["id"], "by": st["by"], "bet": (bet or {}).get("text")})
+    return out
+
+
+def lines_of(goal: dict, ev: dict, box: dict, links: dict, ids: dict, as_of: str, core, history: dict | None = None) -> list[dict]:
     is_met = ev["status"].startswith("met")
     times = [goal["set"]] + [h["t"] for h in ev["history"] if ts(goal["set"]) < ts(h["t"]) <= ts(as_of)]
     out = []
     for c in ev["criteria"]:
-        if c["kind"] not in ("objective", "gate", "diagnostic"):
+        if c["kind"] not in ("objective", "gate", "diagnostic", "measurement"):
             continue
         ref = ids["objective"] if c["kind"] == "objective" else c["ref"]
         unit = ids["unit"] if c["kind"] == "objective" else ((ids["gate_rows"].get(c["ref"]) or {}).get("unit") or fmt_unit(c["ref"]))
@@ -149,14 +196,19 @@ def lines_of(goal: dict, ev: dict, box: dict, links: dict, ids: dict, as_of: str
                 "label": c["label"], "unit": unit, "op": c["op"], "target": c["target"], "set": goal["set"], "due": goal["due"]}
         if c["refusal"]:
             line.update(refusal=c["refusal"], readings=[], estimate={"x2": [], "x1": []}, pace={"x2": "cannot judge yet", "x1": "cannot judge yet"},
-                        current=None, candidate=None, passes=None, gap=None, gap_pct=None, retro=False)
+                        current=None, candidate=None, passes=None, gap=None, gap_pct=None, retro=False,
+                        planned={"x2": [], "x1": []}, planned_set=None)   # round 3: nothing measured, no Planned line yet
             out.append(line)
             continue
         real = []
-        for t in times:  # the goal's candidate at each moment: ONE solution, as the goal is judged (02)
-            e = core.evaluate(goal, box, t)
-            cc = e["criteria"][c["i"]]
-            real.append({"date": t, "value": cc.get("measured"), "kind": "real", "solution": cc.get("on"), "unit": unit})
+        if c["kind"] == "measurement":
+            real = [{"date": sample["t"], "value": sample["value"], "kind": "real", "benchmark_revision": sample["ref"], "unit": unit}
+                    for sample in box["measurements"][ref]["samples"] if ts(sample["t"]) <= ts(as_of)]
+        else:
+            for t in times:  # the goal's candidate at each moment: ONE solution, as the goal is judged (02)
+                e = core.evaluate(goal, box, t)
+                cc = e["criteria"][c["i"]]
+                real.append({"date": t, "value": cc.get("measured"), "kind": "real", "solution": cc.get("on"), "unit": unit})
         real = [r for r in real if r["value"] is not None]
         cur = c["measured"]
         passes = _met(core, c["op"], cur, c["target"])
@@ -178,6 +230,18 @@ def lines_of(goal: dict, ev: dict, box: dict, links: dict, ids: dict, as_of: str
                 w = "at risk"
             words[tag] = w
         gap = None if passes or cur is None else c["target"] - cur
+        # round 3 (CONTRACT §27): Linear (Grove's straight line, _goals_track's `plan`), Planned (from the ideas' By and
+        # Expect, from set) and Planned as it stood when the goal was set (ideas.md at that commit), per buffer
+        v0 = real[0]["value"] if real else cur
+        planned = {tag: planned_line(schedule(goal, box, links, b, is_met, as_of, core), links, ref, goal["set"], v0)
+                   for tag, b in BUFFERS.items()}
+        planned_set = None
+        if history:
+            planned_set = planned_line(schedule(history["goal"], box, history["links"], BUFFERS["x2"], True, as_of, core,
+                                                bys={iid: (history["links"].get(iid) or {}).get("by") for iid in history["goal"]["roadmap"]}),
+                                       history["links"], ref, goal["set"], v0)
+        line["planned"] = planned
+        line["planned_set"] = planned_set
         line.update(refusal=None, readings=real + [{"date": goal["due"], "value": c["target"], "kind": "target", "unit": unit}],
                     estimate={t: e["readings"] for t, e in est.items()}, estimate_end={t: e["end"] for t, e in est.items()},
                     estimate_value={t: e["value"] for t, e in est.items()}, pace=words, current=cur, candidate=c.get("on"),
@@ -191,6 +255,30 @@ def fmt_unit(ref: str) -> str:
         if ref.endswith(suffix):
             return unit
     return ""
+
+
+def plan_at_set(t, goal: dict, rows: list[dict], ids: dict, box: dict) -> dict | None:
+    """The goal's roadmap as ideas.md stood when the goal was set (the newest commit at or before `set` that touched
+    ideas.md), read with the same reader: {goal (its roadmap and effort then), links}. WHY: the Planned line is computed
+    from the ideas as committed; drawing the plan as it stood at set beside it makes a moved goalpost visible (Zach,
+    2026-11-25: "to avoid agents gaming it"). An idea of then is matched to today's by its title; None when the history
+    cannot be read (a fixture overlay, a shallow clone)."""
+    try:
+        sha = t.git("log", "-1", f"--before={goal['set']}", "--format=%H", t.sha, "--", "ideas.md").strip()
+        if not sha:
+            return None
+        text = t.git("show", f"{sha}:ideas.md")
+    except Exception:  # noqa: BLE001 - no history is "not shown", never a failed fold
+        return None
+    parse = fmt._module("ideas_parse", fmt.IDEAS / "ideas_parse.py").parse
+    by_title = {r.get("title"): (r.get("iid") or r["id"]) for r in rows}
+    then = []
+    for idea in parse(text).ideas:
+        then.append({"line": idea.line_no, "iid": by_title.get(idea.title) or f"then-{idea.index + 1}", "lane": idea.lane,
+                     "title": idea.title})
+    g = {**goal, "roadmap": [], "effort": {}}
+    links = fmt.read_links(text, then, [g], ids, box)["ideas"]
+    return {"goal": g, "links": links, "commit": sha[:7]}
 
 
 # ── 03 Odds: the Monte Carlo's inputs (the page runs it; tests/goals.test.mjs holds JS == 03's Python) ───────────
@@ -254,6 +342,28 @@ def hit_kpis(goals: list[dict]) -> list[dict]:
 
 # ── the fold ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
+def read_measurements(raw: str) -> dict:
+    if not raw:
+        return {}
+    doc = json.loads(raw)
+    if doc.get("schema") != "bb-goal-metrics/1" or not isinstance(doc.get("metrics"), dict):
+        raise ValueError("expected bb-goal-metrics/1 with a metrics object")
+    for name, series in doc["metrics"].items():
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or not isinstance(series, dict) or not isinstance(series.get("samples"), list):
+            raise ValueError(f"invalid measurement series {name!r}")
+        times = set()
+        for sample in series["samples"]:
+            if (not isinstance(sample, dict) or not isinstance(sample.get("t"), str) or
+                    type(sample.get("value")) not in (float, int) or not math.isfinite(sample["value"]) or
+                    not isinstance(sample.get("ref"), str) or not sample["ref"]):
+                raise ValueError(f"{name} needs timestamp, finite value and revision for every sample")
+            when = ts(sample["t"])
+            if when.tzinfo is None or when in times:
+                raise ValueError(f"{name} needs distinct timestamps with offsets")
+            times.add(when)
+    return doc["metrics"]
+
+
 def fold(facts: dict) -> dict | None:
     t, state = facts["tree"], facts["state"]
     paths = [p for p in t.files if re.fullmatch(r"goals/[^/]+\.md", p) and p.lower() != "goals/readme.md"]
@@ -263,9 +373,16 @@ def fold(facts: dict) -> dict | None:
     core = fmt.lanes().core
     rows = state.get("ideas") or []
     box = core_box(state, facts.get("ledger") or [], rows)
-    ids = fmt.box_ids(state, facts.get("ledger") or [])
+    metric_path = "goals/metrics.json"
+    metric_problem = []
+    try:
+        box["measurements"] = read_measurements(t.text(metric_path) if metric_path in t.fileset else "")
+    except (ValueError, TypeError, AttributeError) as exc:
+        box["measurements"] = {}
+        metric_problem = [fmt.problem("goal-metrics", metric_path, str(exc), "record measured samples with a time, value and revision")]
+    ids = fmt.box_ids(state, facts.get("ledger") or [], box["measurements"])
     read = fmt.read_notes({p: t.text(p) or "" for p in paths}, ids)
-    goals, problems = read["goals"], read["problems"]
+    goals, problems = read["goals"], metric_problem + read["problems"]
     ideas_text = t.text("ideas.md") if "ideas.md" in t.fileset else ""
     linked = fmt.read_links(ideas_text or "", rows, goals, ids, box)
     links, problems = linked["ideas"], problems + linked["problems"]
@@ -276,11 +393,19 @@ def fold(facts: dict) -> dict | None:
     for g in goals:
         ev = core.evaluate(g, box, as_of)
         bus = {tag: core.bottom_up(g, box, as_of, b) for tag, b in BUFFERS.items()}
+        for bu in bus.values():
+            for st in bu["steps"]:
+                if (links.get(st["id"]) or {}).get("by"):
+                    st["by"] = links[st["id"]]["by"]   # additive: only a step whose idea commits a By carries it
+        is_met = ev["status"].startswith("met")
+        planned_steps = {tag: [{**st, "bet": (links.get(st["id"]) or {}).get("expect_text")}
+                               for st in schedule(g, box, links, b, is_met, as_of, core)] for tag, b in BUFFERS.items()}
         plan = {iid: n for n, iid in enumerate(g["roadmap"], 1)}
         roadmap = []
         for iid in g["roadmap"]:
             i, ln = by_iid.get(iid) or {}, links.get(iid) or {}
             roadmap.append({"id": iid, "step": plan[iid], "written_step": (ln.get("steps") or {}).get(g["id"]), "title": i.get("title"),
+                            **({"by": ln["by"], "by_text": ln["by_text"]} if ln.get("by") else {}),
                             "lane": i.get("lane"), "open": not i.get("checked", True), "status": i.get("status"),
                             "effort": g["effort"].get(iid), "aims": (ln.get("aims") or {}).get(g["id"]),
                             "expect": ln.get("expect"), "expect_text": ln.get("expect_text")})
@@ -301,7 +426,9 @@ def fold(facts: dict) -> dict | None:
                 "why": g["why"], "path": g["path"], "done_when": g["done_when"],
                 **{k: ev[k] for k in ("status", "met_at", "met_by", "hours_left", "passed", "judged", "total", "candidate", "history")},
                 "criteria": crit, "roadmap": roadmap, "effort": g["effort"], "bottom_up": bus,
-                "lines": lines_of(g, ev, box, links, ids, as_of, core), "odds": odds_model(g, ev, box, pace, as_of)}
+                "planned_steps": planned_steps,
+                "lines": lines_of(g, ev, box, links, ids, as_of, core, plan_at_set(t, g, rows, ids, box)),
+                "odds": odds_model(g, ev, box, pace, as_of)}
         out.append(goal)
 
     # the ideas rows gain the goal fields (only here: a box with no goals/ never reaches this line)

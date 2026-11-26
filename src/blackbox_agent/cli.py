@@ -21,7 +21,7 @@ DEFAULT_PORT = 8765
 
 
 def _build(a: argparse.Namespace) -> int:
-    record = build(Path(a.box), Path(a.out), a.ref)
+    record = build(Path(a.box), Path(a.out), a.ref, handoff_local=a.handoff_local, site_cache=a.site_cache)
     print(f"{a.out}: {record['box']} @ {record['ref'][:7]}; landing {record['landing']}, nav.json {record['nav']}, "
           f"overrides: {', '.join(record['overrides']) or 'none'}"
           + (f"; kept {', '.join(record['kept'])} from the committed state.json" if record["kept"] else "")
@@ -54,7 +54,7 @@ def _serve(a: argparse.Namespace) -> int:
         with _server(a.port, handler) as server:  # bound before the build: a busy --port fails at once
             # WHY local by default: on the author's machine every citation should open at its words (the linking ask:
             # "when I look at it locally I want it to all be fully fully linked"); --public previews what Pages shows
-            record = build(Path(a.box), out, a.ref, local=not a.public)
+            record = build(Path(a.box), out, a.ref, local=not a.public, site_cache=a.site_cache)
             port = server.server_address[1]
             lk = record.get("links") or {}
             linked = (f"; sources: {lk['located']} of {lk['private']} private resolve, {lk['broken']} broken"
@@ -147,6 +147,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--box", default=".", help="the box (a git repo; default: the current directory)")
     p.add_argument("--out", required=True, help="the folder to write the site to (e.g. _site)")
     p.add_argument("--ref", default="HEAD", help="the box commit to build (default HEAD; never the working tree)")
+    p.add_argument("--site-cache", action="store_true",
+                   help="opt in to the site cache (a service worker: a dashboard switch asks the server for the build record only); "
+                        "off by default, which removes a worker an earlier build installed (viewer CONTRACT §18.5)")
+    p.add_argument("--handoff-local", action="store_true", help="include committed agent context for loopback serving")
     p.set_defaults(run=_build)
 
     p = sub.add_parser("serve", help="build the box into a temporary folder and serve it on 127.0.0.1")
@@ -157,6 +161,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--ref", default="HEAD")
     p.add_argument("--public", action="store_true",
                    help="serve the public build (private sources as labels), as GitHub Pages shows it")
+    p.add_argument("--site-cache", action="store_true",
+                   help="opt in to the site cache (a service worker: a dashboard switch asks the server for the build record only); "
+                        "off by default, which removes a worker an earlier build installed (viewer CONTRACT §18.5)")
     p.set_defaults(run=_serve)
 
     p = sub.add_parser("new", help="write a box skeleton (the stock files, an empty ledger) into a new folder")

@@ -16,18 +16,19 @@
 import { BBElement, esc } from '../core/element.js';
 import { register } from '../core/registry.js';
 import { fill } from '../core/context.js';
-import { loadViews } from '../core/kit.js';
+import { loadViews, loadDashboard } from '../core/kit.js';
 import schema from './bb-goals.schema.js';
 import { verdict, levers, timeMoves, clock, longClock, hours, pct } from './bb-goals.model.js';
 import { simulate } from './bb-goals.odds.js';
-import { goalsDataset, goalsBaseText, ODDS_SECTION } from './bb-goals.rows.js';
+import { metish } from './bb-goals.card.js';
+import { goalsDataset, goalsBaseText, ODDS_SECTION, CHART_R3, fullPageBase } from './bb-goals.rows.js';
 import { registerPlan } from './bb-goals.plan.js';
 
 const NB = ' ';
 export const PRESETS = ['Rows', 'Cards', 'Timeline', 'Tracking'];
 // a click on a row that belongs to a goal (a Cards card, a chart point, a strip, a roadmap step) opens its goal (09)
 const OF_A_GOAL = new Set(['reading', 'criterion', 'step', 'odds']);
-const CHART = 'Each target, in its own unit: planned, actual, estimate';
+const CHART = CHART_R3;
 
 /* ── 03's levers as a data-ui view (`type: goal-odds`): the panel's odds section, over the goal's odds row ───────── */
 
@@ -130,6 +131,16 @@ bb-goals .bbg-legend .k { display: inline-block; width: 18px; height: 0; border-
 bb-goals .bbg-legend .k-des { border-top-style: dashed; border-color: var(--bb-desired); }
 bb-goals .bbg-legend .k-real { border-color: #ee7d1f; }
 bb-goals .bbg-legend .k-est { border-color: var(--bb-estimate); }
+bb-goals .bbg-legend .k-set { border-color: var(--bb-estimate); border-top-style: dashed; opacity: .45; }
+bb-goals .bbg-legend .k-dot { width: 7px; height: 7px; border: 1.4px solid var(--bb-estimate); border-radius: 50%; }
+bb-goals .bbg-legend .k-dot.f { background: var(--bb-estimate); }
+bb-goals .bbg-full-head { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+bb-goals .bbg-full-head h2 { margin: 0; font-size: 19px; }
+bb-goals .bbg-back { font-size: 13px; }
+bb-goals .bbg-state { font-weight: 650; }
+bb-goals .bbg-state.warn { color: var(--bb-warn); } bb-goals .bbg-state.bad { color: var(--bb-bad); } bb-goals .bbg-state.good { color: var(--bb-good, #22a35a); }
+bb-goals .bbg-full data-dashboard { display: block; min-width: 0; }
+bb-goals .bbg-full .dd-panel { min-width: 0; }
 bb-goals .bbg-legend .k-aim { width: 8px; height: 8px; border: 1.5px solid var(--bb-desired); border-radius: 50%; }
 bb-goals .bbg-problems { border-left: 3px solid var(--bb-warn); padding: 4px 0 4px 12px; font-size: 13px; }
 bb-goals .bbg-problems ul { margin: 4px 0 0; padding-left: 18px; }
@@ -184,20 +195,32 @@ bb-goals .bbg-how { color: var(--bb-faint); font-size: 12px; margin: 6px 0 0; }
     this._slice = slice;
     this._tag ??= this.settings.buffer === 'x1' ? 'x1' : 'x2';
     const problems = slice.problems || [];
+    const measured = slice.goals.some((goal) => goal.criteria?.some((criterion) => criterion.kind === 'measurement'));
     this.innerHTML = `<div class="bbg">
 <p class="bbg-verdict" data-verdict aria-live="polite"></p>
-<p class="bbg-asof"><span>as of ${esc(longClock(slice.as_of, slice.as_of))} · ${slice.goals.length} ${slice.goals.length === 1 ? 'goal' : 'goals'} in <code>goals/</code>, judged on the box's own ledger and tests${slice.clock === 'fixture' ? ' (a fixture\'s clock)' : ''}</span>
+<p class="bbg-asof"><span>as of ${esc(longClock(slice.as_of, slice.as_of))} · ${slice.goals.length} ${slice.goals.length === 1 ? 'goal' : 'goals'} in <code>goals/</code>${measured ? ', with recorded benchmark readings' : ", judged on the box's own ledger and tests"}${slice.clock === 'fixture' ? ' (a fixture\'s clock)' : ''}</span>
 <label class="bbg-switch"><input type="checkbox" data-buffer${this._tag === 'x2' ? ' checked' : ''}> <span>Buffer ×${esc(String(slice.buffer || 2))}</span> <small>bottom-up estimates never include all the things</small></label></p>
-${slice.goals.length ? `<p class="bbg-legend"><span class="lg"><i class="k k-des"></i>planned: where it stood when set → the target by your date</span><span class="lg"><i class="k k-real"></i>actual: the best candidate since set (dotted = nothing scored since)</span><span class="lg"><i class="k k-est"></i>estimate: the roadmap's ideas, bottom-up</span><span class="lg"><i class="k k-aim"></i>target</span></p>` : ''}
+${slice.goals.length ? this.legendHtml(measured) : ''}
 ${problems.length ? `<div class="bbg-problems" role="note"><b>${problems.length} ${problems.length === 1 ? 'line' : 'lines'} of the goals' files refused</b> (left out until fixed):<ul>${problems.map((p) => `<li><code>[${esc(p.lint)}] ${esc(p.where)}</code>: ${esc(p.what)}; <b>fix:</b> ${esc(p.fix)}</li>`).join('')}</ul></div>` : ''}
 ${slice.goals.length ? `<div class="bbg-views" data-views-host></div><p class="bbg-foot">${esc(this.paceLine(slice))}</p>` : ''}
 </div>`;
     this.drawVerdict();
     if (!slice.goals.length) return undefined;
+    const full = this.settings.full && slice.goals.find((x) => x.id === this.settings.goal);
+    if (full) return this.renderFull(full, measured);
     this.querySelector('[data-buffer]').addEventListener('change', (e) => this.setBuffer(e.target.checked ? 'x2' : 'x1'));
     await this.mountViews();
     this.dataset.drew = 'goals';
     return undefined;
+  }
+
+  /** Round 3's three named lines (CONTRACT §27): linear dashed grey, planned violet, actual orange, target ring. */
+  legendHtml(measured) {
+    return `<p class="bbg-legend" data-legend><span class="lg" data-line="linear"><i class="k k-des"></i><b>Linear</b>: where it stood when set → the target by your date, straight</span>`
+      + `<span class="lg" data-line="planned"><i class="k k-est"></i><b>Planned</b>: the roadmap's ideas, each at its <code>- By:</code> by its <code>- Expect:</code> <i class="k k-dot f"></i> (<i class="k k-dot"></i> no By: its effort × the buffer)</span>`
+      + `<span class="lg" data-line="plan-at-set"><i class="k k-set"></i>the plan when the goal was set</span>`
+      + `<span class="lg" data-line="actual"><i class="k k-real"></i><b>Actual</b>: ${measured ? 'recorded measurements' : 'the best candidate since set (dotted = nothing scored since)'}</span>`
+      + '<span class="lg" data-line="target"><i class="k k-aim"></i>target</span></p>';
   }
 
   paceLine(slice) {
@@ -214,13 +237,53 @@ ${slice.goals.length ? `<div class="bbg-views" data-views-host></div><p class="b
     el.className = `bbg-verdict ${v.tone}`;
   }
 
+  fullHref(gid) {
+    const pattern = this.context.links.page || '{page}.html';
+    return `${fill(pattern, { page: 'goals' })}?goal=${encodeURIComponent(gid)}&full=1`;
+  }
+
+  /** The goal's full page (round 3, `#goals?goal=G1&full=1`): a dashboard of the panel's own sections, data-ui's stock
+      <data-dashboard> over the same rows, each section's view (its chart, strips, roadmap, odds) a panel of the grid and
+      each list of fields a text panel (bb-goals.rows.js fullPageBase: the record is read, never re-written). */
+  async renderFull(g, measured) {
+    const host = this.querySelector('.bbg');
+    const w = g.words[this._tag];
+    const overview = `${fill(this.context.links.page || '{page}.html', { page: 'goals' })}`;
+    host.querySelector('[data-views-host]')?.remove();
+    host.querySelector('.bbg-foot')?.remove();
+    host.querySelector('[data-verdict]').insertAdjacentHTML('beforebegin', `<p class="bbg-back"><a href="${esc(overview)}" data-overview>← All goals</a></p>`);
+    host.insertAdjacentHTML('beforeend', `<div class="bbg-full" data-full="${esc(g.id)}"><div class="bbg-full-head"><h2>${esc(g.id)} · ${esc(g.title)}</h2><span class="bbg-state ${esc(w.tone)}">${esc(w.state)}</span><span>want by ${esc(w.want_by)} · ${esc(metish(g) ? `met ${w.gap}` : w.time_left)}</span></div><data-dashboard no-url></data-dashboard></div>`);
+    void measured;
+    host.querySelector('[data-overview]').addEventListener('click', (e) => {
+      const go = this.context.open(this, { kind: 'page', id: 'goals', query: {}, href: overview });
+      if (!go || !this.context.follow) e.preventDefault();
+    });
+    this.querySelector('[data-buffer]').addEventListener('change', (e) => { this._tag = e.target.checked ? 'x2' : 'x1'; this.drawVerdict(); this.drawFull(g); });
+    this.addEventListener('click', (e) => this.onLink(e), true);
+    const core = await loadDashboard();
+    registerPlan(core);
+    registerOdds(core);
+    this._core = core;
+    await this.drawFull(g);
+    this.dataset.drew = 'goal-page';
+    return undefined;
+  }
+
+  async drawFull(g) {
+    const dash = this.querySelector('.bbg-full data-dashboard');
+    const ds = this.rowsFor(this._tag);
+    const base = this._core.parseBase(fullPageBase(this._slice, g.id, ds, { odds: this.settings.levers !== false }));
+    dash.load(base, { goals: { ...ds, id: `${ds.id}/${g.id}` } });
+    await new Promise((ok) => setTimeout(ok, 0));
+  }
+
   ideasHref(gid, idea = '') {
     const pattern = this.context.links.page || '{page}.html';
     return `${fill(pattern, { page: 'ideas' })}?goal=${encodeURIComponent(gid)}${idea ? `&idea=${encodeURIComponent(idea)}` : ''}`;
   }
 
   rowsFor(tag) {
-    return goalsDataset(this._slice, tag, { ideasHref: (g) => this.ideasHref(g), id: `bb/${this.data.box}/goals` });
+    return goalsDataset(this._slice, tag, { ideasHref: (g) => this.ideasHref(g), fullHref: (g) => this.fullHref(g), id: `bb/${this.data.box}/goals` });
   }
 
   /** ONE stock <data-views>: the presets as tabs, the one side panel (open: side). */
@@ -274,6 +337,15 @@ ${slice.goals.length ? `<div class="bbg-views" data-views-host></div><p class="b
     const a = e.target.closest?.('a[href]');
     if (!a || !this.contains(a)) return;
     const href = a.getAttribute('href') || '';
+    // "Open full page ↗" on a card, data-ui's ⤢ "Open as page" in the side panel, a goal's title link (round 3)
+    const full = /[?&]goal=([^&#]+)&full=1/.exec(href);
+    if (full) {
+      const gid = decodeURIComponent(full[1]);
+      const go = this.context.open(this, { kind: 'page', id: 'goals', query: { goal: gid, full: '1' }, href });
+      if (!go || !this.context.follow) e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const m = /[?&]goal=([^&#]+)/.exec(href);
     if (!m || !/ideas/.test(href)) return;
     const gid = decodeURIComponent(m[1]);

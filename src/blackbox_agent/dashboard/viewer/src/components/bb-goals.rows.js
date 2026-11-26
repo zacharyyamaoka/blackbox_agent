@@ -23,6 +23,7 @@
      odds       (the viewer's) one per goal: 03's Monte Carlo inputs and 02's value moves, for the panel's odds section */
 import { burnupSvg, stripSvg, unknownSvg, dataUri, trackLine, pyFloat, pyRound, pyRoundInt, sigFig } from './bb-goals.spark.js';
 import { valueMoves } from './bb-goals.model.js';
+import { goalCardSvg, cardHeight, threeSvg, targetSeries, checkSeries, CARD_W, COLORS } from './bb-goals.card.js';
 
 /* ── track.py's words, in JS (the row builders' helpers) ───────────────────────────────────────────────────────── */
 
@@ -528,25 +529,12 @@ const CARDS_08 = `  - type: kpi
       spark: { x: at, y: value }
 `;
 
-/** An aware datetime's isoformat(timespec="minutes") in the offset of `like` (the box's own). */
-function isoMinutes(t, like) {
-  const off = /([+-])(\d{2}):(\d{2})$/.exec(like);
-  const offMin = off ? (off[1] === '-' ? -1 : 1) * (Number(off[2]) * 60 + Number(off[3])) : 0;
-  const d = new Date(t + offMin * 60000);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}${off ? off[0] : '+00:00'}`;
-}
-
 /** 09's goals.base (07's Rows, Timeline and Tracking; 08's kpi Cards; the splice's panel on every view). */
 export function spliceBaseText(slice, { record = spliceRecord(), data = true } = {}) {
   const lanes = `[${slice.goals.map((g) => q(`${g.id} · ${g.title}`)).join(', ')}]`;
-  // the Timeline's window: V5's "zoom to the work" (now − 12 % … the open goals' last dated idea + 45 %)
-  const now = ms(slice.as_of);
-  const ends = slice.goals.filter((g) => g.status === 'open').flatMap((g) => g.bottom_up.x2.steps.filter((s) => s.dated !== false).map((s) => s.end));
-  let end = now + 3600000, endLike = slice.as_of;
-  for (const e of ends) if (ms(e) > end) { end = ms(e); endLike = e; }
-  const spanMs = end - now;
-  const win = [isoMinutes(now - spanMs * 0.12, slice.as_of), isoMinutes(end + spanMs * 0.45, endLike)];
+  // WHY no `plan.window` (round 3, Zach's daily note: see "the start and end"): V5's "zoom to the work" opened on an
+  // empty slice when no goal was open (now … now + 1 h); data-ui's timeline (57bfaf6, defaultWindow) fits every item's
+  // start and end into 75 % of the width, which bb-goals.plan.js falls back to when no window is set
   const g3 = slice.goals.find((g) => !g.check.judged);
   const leftOut = g3 ? ` (${g3.id}: ${g3.check.says})` : '';
   const intro = `**% of the way**, one line per goal so every goal reads on one axis whatever its units: each box counts once (a box that passes is 1, a spec or gate 0 or 1), a number counts the share of its gap closed since the goal was set, and a box that can't be judged is left out and named${leftOut}. Click a goal for each box in its own units.`;
@@ -579,7 +567,6 @@ ${CARDS_08}${record}
     plan:
       shape: shape
       now: ${q(slice.as_of)}
-      window: [${q(win[0])}, ${q(win[1])}]
 ${record}
   - type: table
     name: Tracking
@@ -607,14 +594,133 @@ const AS_WRITTEN = '        - { name: The goal as written, properties: [why, don
 /** The viewer's panel: the splice's, then round 1's "what it takes" (04's "no idea aims at this"), 03's odds with 02's
     value moves (left out with the tab's `levers` setting off), and the goal as written with 01's hit rate for its tier. */
 function goalsRecord(odds = true) {
-  const rec = spliceRecord();
+  const rec = recordR3(spliceRecord());
   if (!rec.endsWith(AS_WRITTEN)) throw new Error("the splice's panel changed its last section");
   return `${rec.slice(0, -AS_WRITTEN.length)}${TAKES}\n${odds ? `${ODDS}\n` : ''}${AS_WRITTEN.replace('caveat]', 'caveat, tier_hit]')}`;
 }
 
-/** The viewer's .base: the splice's presets and panel, no data file (the tab hands data-ui the rows). */
+/** The viewer's .base: the splice's presets and panel, no data file (the tab hands data-ui the rows); round 3 (§27):
+    Cards is one card per goal, the panel's chart draws linear / planned / actual, and a goal's record has a page (its
+    full-page dashboard, `full_href`), which data-ui offers in the panel's header as "Open as page" (⤢). */
 export function goalsBaseText(slice, { odds = true } = {}) {
-  return spliceBaseText(slice, { record: goalsRecord(odds), data: false });
+  const text = spliceBaseText(slice, { record: goalsRecord(odds), data: false });
+  const cards = `${CARDS_08}${goalsRecord(odds)}`;
+  if (!text.includes(cards) || !text.startsWith('open: side\n')) throw new Error("the splice's Cards preset or its open: changed");
+  return text.replace('open: side\n', 'open: { mode: side, url: full_href }\n').replace(cards, `${cardsR3(slice)}${goalsRecord(odds)}`);
+}
+
+/* ── Goals round 3 (CONTRACT §27): one card per goal, three named lines, the full page ─────────────────────────── */
+
+export const CHART_R3 = 'Each target, in its own unit: linear, planned, actual';
+
+/** Cards (Zach, 2026-11-25: "on the goal page I still want to keep everything grouped together by goals… almost like an
+    overview of the goals"): data-ui's stock cards view over the goal rows, one card each: its name, its state word,
+    when it is due and the time left, the boxes ticked, "Open full page ↗", and the card's drawing (bb-goals.card.js:
+    a KPI tracker per target, the pass / fail boxes as ticks). Every card is drawn as tall as the tallest. */
+function cardsR3(slice) {
+  const h = Math.max(...slice.goals.map(cardHeight), 60);
+  const ratio = Math.min(2.5, Math.max(0.25, Math.round((h / CARD_W) * 1000) / 1000));
+  return `  - type: cards
+    name: Cards
+    filters: 'kind == "goal"'
+    order: [name, state, due_left, ticked, full_link]
+    image: card_img
+    imageFit: contain
+    imageAspectRatio: ${ratio}
+    cardSize: 360
+    sort:
+      - { property: rank, direction: ASC }
+      - { property: behind, direction: DESC }
+    display: { state: status, full_link: link }
+`;
+}
+
+/** The panel's chart, round 3: 08's small multiples with linear (dashed grey), planned (violet steps: a filled dot where
+    an idea's - By: dates it, a hollow one where only its effort does), the plan as it stood at set (faint), actual. */
+export function chartSpecR3(columns = null) {
+  const base = chartSpec(columns);
+  const f = (sname) => ({ filter: `datum.series == '${sname}'` });
+  const enc = (l) => l.encoding;
+  const x = enc(base.layer[2]).x, y = enc(base.layer[2]).y;
+  const keep = base.layer.filter((l) => !/'(planned|hold|estimate)'/.test(JSON.stringify(l.transform)));
+  const at = keep.findIndex((l) => /'carried'/.test(JSON.stringify(l.transform)));
+  keep.splice(at, 0,
+    { transform: [f('linear')], mark: { type: 'line', stroke: COLORS.linear, strokeDash: [4, 3], strokeWidth: 1.4 }, encoding: { x, y } },
+    { transform: [f('plan_set')], mark: { type: 'line', stroke: COLORS.planned, strokeDash: [2, 2], strokeWidth: 1.2, opacity: 0.4, interpolate: 'step-after' }, encoding: { x, y } },
+    { transform: [f('planned')], mark: { type: 'line', stroke: COLORS.planned, strokeWidth: 1.8, interpolate: 'step-after' }, encoding: { x, y } },
+    { transform: [{ filter: "datum.series == 'planned' && datum.step == 'by'" }], mark: { type: 'point', filled: true, fill: COLORS.planned, stroke: COLORS.planned, size: 26, opacity: 1 }, encoding: { x, y } },
+    { transform: [{ filter: "datum.series == 'planned' && datum.step == 'estimated'" }], mark: { type: 'point', filled: false, stroke: COLORS.planned, strokeWidth: 1.4, size: 30, opacity: 1 }, encoding: { x, y } });
+  return { ...base, layer: keep };
+}
+
+function recordR3(text) {
+  const from = text.indexOf(`        - name: ${q(CHART_SECTION)}\n`);
+  const to = text.indexOf('\n', text.indexOf('          view: ', from)) + 1;
+  if (from < 0 || to <= 0) throw new Error("the splice's chart section moved");
+  const chart = { type: 'chart', name: 'Its targets', filters: 'kind == "reading" && goal == this.id',
+    sort: [{ property: 'rank', direction: 'ASC' }], style: { chrome: 'minimal' },
+    chart: chartSpecR3(1), hover: { title: 'target_name', fields: ['series', 'when', 'value', 'note'] } };
+  return `${text.slice(0, from)}        - name: ${q(CHART_R3)}\n          view: ${pyJson(chart)}\n${text.slice(to)}`;
+}
+
+/** The splice's dataset with round 3's lines: the reading series `planned` (round 2's Grove line) is renamed `linear`;
+    the estimate (and its hold) gives way to `planned` from the slice's lines[].planned (the ideas' By and Expect) and
+    `plan_set` (the plan as ideas.md stood at set); Tracking's drawings and each goal's card draw the same three lines. */
+function round3(ds, slice, b, fullHref) {
+  const now = slice.as_of;
+  const byGoal = Object.fromEntries(slice.goals.map((g) => [g.id, g]));
+  const h = Math.max(...slice.goals.map(cardHeight), 60);
+  const charts = new Map();
+  const rows = [];
+  for (const r of ds.rows) {
+    if (r.kind === 'goal') {
+      const g = byGoal[r.id];
+      r.card_img = dataUri(goalCardSvg(g, b, now, h));
+      r.full_link = { value: fullHref(g.id), text: 'Open full page ↗' };
+      r.full_href = fullHref(g.id);
+      if (g.check.judged) {
+        r.pct_way = dataUri(threeSvg(checkSeries(g, b, now, 'pct'), TRACK_W, TRACK_H));
+        r.boxes = dataUri(threeSvg(checkSeries(g, b, now, 'ticks'), BOX_W, BOX_H));
+      }
+    }
+    if (r.kind === 'reading') {
+      if (r.series === 'estimate' || r.series === 'hold') continue;
+      if (r.series === 'planned') r.series = 'linear';
+      if (!charts.has(r.target_name)) charts.set(r.target_name, { chart: r.chart, rank: r.rank, goal: r.goal, at: rows.length });
+    }
+    rows.push(r);
+  }
+  // the planned series per chart, inserted after the chart's own rows
+  const adds = [];
+  for (const [name, c] of charts) {
+    const g = byGoal[c.goal];
+    let s = null;
+    if (/ · boxes ticked, of \d+$/.test(name)) s = checkSeries(g, b, now, 'ticks');
+    else {
+      const line = g.lines.find((l) => name === `${g.id} · ${l.label.replace(/<=/g, '≤').replace(/>=/g, '≥')}`);
+      if (line && line.kind === 'line') s = targetSeries(line, g, b, now);
+    }
+    if (!s) continue;
+    let k = 0;
+    const add = (series, p) => {
+      k += 1;
+      adds.push({ id: `rd-${g.id}-${name.length}-${series}-${String(k).padStart(3, '0')}`, kind: 'reading', goal: g.id, chart: c.chart, target_name: name,
+        name: `${name} · ${series}`, rank: c.rank, series, t: `${p.t.slice(0, 19)}Z`, at: p.t, t_end: null, value: p.v,
+        when: new Clock(now).when(p.t), note: p.idea ? `${p.idea}${p.by ? ' · by its - By:' : ' · estimated: no - By:'}` : (series === 'plan_set' ? 'the plan when set' : null),
+        step: p.idea ? (p.by ? 'by' : 'estimated') : null });
+    };
+    for (const p of s.planned) add('planned', p);
+    for (const p of s.atSet) add('plan_set', p);
+  }
+  rows.push(...adds);
+  ds.rows = rows;
+  Object.assign(ds.properties, {
+    card_img: { type: 'text', label: 'The goal at a glance', display: 'image' },
+    full_link: { type: 'text', label: 'Full page', display: 'link' },
+    full_href: { type: 'text', label: 'Its page', hidden: true },
+    step: { type: 'text', label: 'Dated by', hidden: true },
+  });
+  return ds;
 }
 
 const GLYPH = { pass: '✓', fail: '✗', unverified: '?', 'not run': '–', deferred: '…', 'cannot judge': '–' };
@@ -623,7 +729,10 @@ const GLYPH = { pass: '✓', fail: '✗', unverified: '?', 'not run': '–', def
     aims at, 04's finding with the line to write. */
 function takesMd(g) {
   return g.criteria.map((c) => {
+    // WHY measurement first (round 3, found on trajectory_tracking_agent's G1): a benchmark reading sits at the box's
+    // level but has no tests; it read "its undefined tests pass"
     const how = c.refusal ? c.refusal
+      : c.kind === 'measurement' ? `${typeof c.measured === 'number' ? `${num(c.measured)}, ` : ''}${c.passed ? 'passes' : 'not yet'} (goals/metrics.json, its newest reading)`
       : c.level === 'box' ? `${c.state === 'pass' ? `its ${c.tests} tests pass` : c.tests ? `its tests: ${c.state}` : 'no test names it yet'} (the repo's tests at the ref)`
         : c.kind === 'gates' ? `${c.passed ? 'every gate passes' : 'a gate fails'} on ${c.on || 'no solution'}, the candidate`
           : `${typeof c.measured === 'number' ? `${num(c.measured)} ` : ''}on ${c.on || 'no solution'}, the candidate`;
@@ -653,8 +762,8 @@ function oddsNone(g, clock) {
 }
 
 /** The viewer's dataset: the splice's, plus round 1's fields on each goal row and one odds row per goal. */
-export function goalsDataset(slice, b, { ideasHref = (g) => `#ideas?goal=${g}`, id = 'goals' } = {}) {
-  const ds = spliceDataset(slice, b, { ideasHref, id });
+export function goalsDataset(slice, b, { ideasHref = (g) => `#ideas?goal=${g}`, fullHref = (g) => `#goals?goal=${g}&full=1`, id = 'goals' } = {}) {
+  const ds = round3(spliceDataset(slice, b, { ideasHref, id }), slice, b, fullHref);
   const clock = new Clock(slice.as_of);
   for (const r of ds.rows) {
     if (r.kind !== 'goal') continue;
@@ -679,4 +788,70 @@ export function goalsDataset(slice, b, { ideasHref = (g) => `#ideas?goal=${g}`, 
     odds_due: { type: 'date', label: 'Due', hidden: true }, odds_idle: { type: 'number', label: 'Idle hours', hidden: true },
   });
   return ds;
+}
+
+/* ── Goals round 3: the goal's full page (CONTRACT §27) ────────────────────────────────────────────────────────── */
+
+/** The side panel's sections, read from the viewer's own .base record (never re-written): [{name, properties, view}]. */
+export function panelSections(slice, { odds = true } = {}) {
+  const text = goalsBaseText(slice, { odds });
+  const rec = text.slice(text.indexOf('    record:\n'), text.indexOf('\n  - type: cards'));
+  const out = [];
+  for (const m of rec.matchAll(/^ {8}- (\{ name: (.+?), properties: \[([^\]]*)\] \}|name: (.+))$\n?((?: {10}.+\n?)*)/gm)) {
+    const name = (m[2] ?? m[4]).replace(/^"(.*)"$/, (_, x) => JSON.parse(`"${x}"`));
+    const body = m[5] || '';
+    const props = m[3] ?? (/^ {10}properties: \[([^\]]*)\]/m.exec(body)?.[1] ?? null);
+    const view = /^ {10}view: (.+)$/m.exec(body)?.[1] ?? null;
+    out.push({ name, properties: props ? props.split(',').map((x) => x.trim()).filter(Boolean) : [], view });
+  }
+  return out;
+}
+
+/** A field as markdown for a text panel (the panel's field list, read from the same row and labels). */
+function fieldMd(v, p) {
+  if (v === null || v === undefined || v === '') return null;
+  if (Array.isArray(v)) return v.map((x) => `\n  - ${String(x)}`).join('');
+  if (typeof v === 'object') return p?.display === 'link' && v.value ? `[${v.text || v.value}](${v.value})` : String(v.text ?? v.value ?? '');
+  return String(v);
+}
+
+const PANEL_SIZE = { // the grid: [w of 12, h in rows of 110 px] per section, by its place in the panel
+  'Where it stands': [5, 3], 'Each pass / fail box': [6, 3], 'How the % counts': [6, 3], 'The roadmap, in plan order': [6, 3],
+  'What it takes': [6, 4], [ODDS_SECTION]: [6, 6], 'The goal as written': [12, 3],
+};
+
+/** The goal's full page as a data-ui dashboard .base (`layout:` over `views:`): every section of the side panel, in its
+    order, as one panel of the grid; a section's embedded view with `this.id` bound to the goal, a section's fields as a
+    text panel. WHY from the record and not a second list: the panel and the page can never drift apart. */
+export function fullPageBase(slice, gid, ds, { odds = true } = {}) {
+  const row = ds.rows.find((r) => r.id === gid && r.kind === 'goal');
+  const props = ds.properties;
+  const views = [], panels = [];
+  const g = slice.goals.find((x) => x.id === gid);
+  for (const sec of panelSections(slice, { odds })) {
+    // a section with nothing for this goal is left out (a goal with no pass / fail box); no odds is said in two rows
+    if (sec.name === 'Each pass / fail box' && !g.strips.length) continue;
+    const [w, h0] = sec.name === CHART_R3 ? [7, Math.max(3, 2 * (row.n_targets || 1))] : (PANEL_SIZE[sec.name] || [6, 3]);
+    const h = sec.name === ODDS_SECTION && !g.odds ? 2 : h0;
+    const md = sec.properties.map((k) => [props[k]?.label || k, fieldMd(row[k], props[k])]).filter(([, v]) => v)
+      .map(([label, v]) => (/^\s*- |\n/.test(v) ? `**${label}**\n\n${v.replace(/^\n/, '').replace(/^ {2}- /gm, '- ')}` : `**${label}**: ${v}`)).join('\n\n');
+    if (md || !sec.view) panels.push({ text: `### ${sec.name}\n\n${md || '—'}`, w });
+    if (sec.view) {
+      // `this.id` bound to the goal, quoted for where it sits (a JSON string in a flow-JSON view, a YAML '…' otherwise)
+      const view = sec.view.replace(/this\.id/g, sec.view.startsWith('{"') ? JSON.stringify(q(gid)).slice(1, -1) : q(gid));
+      // the section's view, renamed to its section (the panel names it; one name per view)
+      views.push(`  - ${view.replace(/("name"|name): ("[^"]*"|[^,]+),/, `$1: ${q(sec.name)},`)}`);
+      panels.push({ view: sec.name, w, h, title: sec.name });
+    }
+  }
+  return `data: goals.json
+open: side
+layout:
+  columns: 12
+  rowHeight: 110
+  panels:
+${panels.map((p) => `    - ${pyJson(p)}`).join('\n')}
+views:
+${views.join('\n')}
+`;
 }

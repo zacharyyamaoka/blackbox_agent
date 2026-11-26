@@ -96,7 +96,7 @@ def _label(c: dict, box: dict) -> str:
         return f"{c['ref']} {c['op']} {c['value']} {g.get('unit') or ''}".strip() + " (tightened)"
     if k == "objective":
         return f"{obj} {c['op']} {c['value']} {unit}" + (" on ruler v2" if c.get("ruler") == "v2" else "")
-    if k == "diagnostic":
+    if k in ("diagnostic", "measurement"):
         return f"{c['ref']} {c['op']} {c['value']}"
     if k == "spec":
         req = next((r for r in box["state"]["spec"]["requirements"] if r["id"] == c["ref"]), {})
@@ -162,8 +162,12 @@ def evaluate(goal: dict, box: dict, as_of: str = AS_OF) -> dict:
     crit = []
     for i, c in enumerate(goal["criteria"]):
         crit.append({**c, "i": i, "label": c.get("label") or _label(c, box), "refusal": _refusal(c, box),
-                     "level": "box" if c["kind"] == "spec" else "solution"})
+                     "level": "box" if c["kind"] in ("spec", "measurement") else "solution"})
     sol_crit = [c for c in crit if c["level"] == "solution" and not c["refusal"]]
+    benchmark = box.get("measurements", {})
+    latest = max((sample for c in crit if c["kind"] == "measurement"
+                  for sample in benchmark.get(c["ref"], {}).get("samples", []) if ts(sample["t"]) <= now),
+                 key=lambda sample: ts(sample["t"]), default=None)
 
     # Per solution: how many solution-level criteria it meets. The candidate = most met, then best objective.
     scored = []
@@ -185,6 +189,19 @@ def evaluate(goal: dict, box: dict, as_of: str = AS_OF) -> dict:
         c["target"] = c.get("value")
         if c["refusal"]:
             c.update(state="cannot judge", value=None, measured=None, passed=None)
+            continue
+        if c["kind"] == "measurement":
+            samples = benchmark.get(c["ref"], {}).get("samples", [])
+            # WHY compare one benchmark revision: a good value from an old build cannot fill a missing result.
+            last = max((s for s in samples if latest and s["ref"] == latest["ref"] and ts(s["t"]) <= now),
+                       key=lambda s: ts(s["t"]), default=None)
+            if last is None:
+                c.update(refusal="No benchmark reading recorded yet", state="cannot judge", value=None, measured=None, passed=None)
+            else:
+                value = last["value"]
+                passed = OPS[c["op"]](value, c["target"])
+                c.update(state="pass" if passed else "fail", value=value, measured=value, passed=passed,
+                         observed_at=last["t"], benchmark_revision=last["ref"])
             continue
         if c["level"] == "box":
             res, ok, req = _spec_state(c, box)
@@ -220,6 +237,10 @@ def evaluate(goal: dict, box: dict, as_of: str = AS_OF) -> dict:
         status = "cannot judge yet"
     elif all_now and box_ok:
         # met when the last box-level criterion and the solution-level ones all held; box-level history is the repo's
+        measured_at = [c["observed_at"] for c in crit if c.get("observed_at")]
+        if measured_at:
+            met_at = max([*measured_at, *([met_at] if met_at else [])], key=ts)
+            met_by = met_by or latest["ref"]
         status = "met" if (met_at is None or ts(met_at) <= due) else "met late"
     elif now > due:
         status = "missed"

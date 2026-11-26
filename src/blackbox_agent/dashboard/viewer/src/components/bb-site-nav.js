@@ -35,14 +35,15 @@ import schema from './bb-site-nav.schema.js';
 import { registerSiteCache } from '../core/site-cache.js';
 
 // the site cache (CONTRACT §18.5, viewer/site/blackbox-sw.js): every page of a built site has this bar, so the bar
-// registers it, once the page has loaded (its install never competes with the page's own requests). Off outside a
-// `blackbox build` site. WHY (Zach, 2026-11-25): "I don't like how long it takes to switch between workspaces"
+// registers it (a `blackbox build --site-cache` site) or removes an installed one (a default build), once the page has
+// loaded. Opt-in since 0.1.19: inside Vibe Tracks it made a warm switch slower (src/core/site-cache.js says by how much)
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   if (document.readyState === 'complete') registerSiteCache();
   else window.addEventListener('load', () => registerSiteCache(), { once: true });
 }
 
 const svg = (d, extra = '') => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
+const COPY_FOR_AI = svg('<path d="M8 14H3V2h6l3 3v3M9 2v4h3M8 11h6m-3-3v6"/>');
 /** The dashboards' icons (lane NAV's, proposals-nav/_shared/nav-styles.js): drawn here, nothing fetched. */
 export const SITE_ICONS = {
   box: svg('<path d="M8 1.8 13.6 5v6L8 14.2 2.4 11V5z"/><path d="M2.6 5.1 8 8.2l5.4-3.1M8 8.2v6"/>'),
@@ -107,6 +108,12 @@ bb-site-nav .bbs-pill b { font-variant-numeric: tabular-nums; font-weight: 650; 
 bb-site-nav .bbs-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0;
   border-radius: var(--bb-radius); color: var(--bb-muted); background: none; border: 1px solid transparent; cursor: pointer; }
 bb-site-nav .bbs-icon:hover, bb-site-nav .bbs-icon[aria-expanded="true"] { color: var(--bb-fg); background: var(--bb-hover); }
+bb-site-nav .bbs-copy-status { position: absolute; top: 40px; right: 16px; z-index: 2; padding: 6px 8px;
+  color: var(--bb-fg); background: var(--bb-bg); border: 1px solid var(--bb-border); border-radius: var(--bb-radius); }
+bb-site-nav .bbs-copy-status:empty { clip-path: inset(50%); white-space: nowrap; }
+bb-site-nav .bbs-handoff { width: min(44rem, 92vw); padding: 16px; color: var(--bb-fg); background: var(--bb-bg);
+  border: 1px solid var(--bb-border); border-radius: var(--bb-radius); }
+bb-site-nav .bbs-handoff textarea { display: block; width: 100%; height: 32vh; margin: 8px 0; color: inherit; background: var(--bb-subtle); }
 bb-site-nav .bbs-sub { display: flex; align-items: flex-end; gap: 0 2px; height: 36px; padding: 0 16px; min-width: 0; overflow: hidden;
   border-top: 1px solid var(--bb-border); background: var(--bb-subtle); }
 bb-site-nav .bbs-sub .bbs-row { flex: 0 1 auto; }
@@ -293,11 +300,12 @@ bb-site-nav .bbs-fail { align-self: center; color: var(--bb-muted); font-size: 1
     const repo = model.site.repo || (d.about && /^https?:\/\//.test(d.about.url || '') ? d.about.url : null);
     const repoName = repo ? (() => { try { return new URL(repo).pathname.replace(/^\/|\/$|\.git$/g, ''); } catch { return repo; } })() : '';
     const gh = repo ? `<a class="bbs-icon" href="${esc(repo)}" target="_blank" rel="noopener" data-github aria-label="${esc(repoName)} on GitHub" title="${esc(repoName)} on GitHub">${GITHUB}</a>` : '';
+    const copy = model.site.handoff ? `<button type="button" class="bbs-icon" data-copy-for-ai aria-label="Copy for AI" title="Copy for AI">${COPY_FOR_AI}</button><span class="bbs-copy-status" role="status"></span>` : '';
     const gear = `<button type="button" class="bbs-icon" data-settings aria-haspopup="dialog" aria-expanded="false" aria-controls="${this.popId('settings')}" aria-label="Settings" title="Settings">${GEAR}</button>`;
     // WHY the ⌂ and the name (Zach via the Vibe Tracks Agent, 2026-11-25): a track opens on the dashboard, and the box
     // name at the far left did not say it went back to the landing; the ⌂ takes the switcher's "/" place (same width)
     const brand = `<a class="bbs-brand" href="${esc(model.site.landing)}" title="Landing page" aria-label="${esc(model.site.name)}: Landing page"><span class="bbs-home" aria-hidden="true">⌂</span> ${esc(model.site.name)}</a>`;
-    const right = `<div class="bbs-right">${pill}${gh}${gear}</div>`;
+    const right = `<div class="bbs-right">${pill}${copy}${gh}${gear}</div>`;
     let head;
     if (model.layout === 'switcher') {
       // "Box name / Black box ▾": a WAI-ARIA menu button; the menu (every dashboard by group) is drawn when it opens
@@ -326,6 +334,7 @@ bb-site-nav .bbs-fail { align-self: center; color: var(--bb-muted); font-size: 1
   }
 
   wire() {
+    this.querySelector('[data-copy-for-ai]')?.addEventListener('click', (event) => this.copyForAI(event.currentTarget));
     this.wirePop(this.querySelector('[data-settings]'), this.querySelector('[data-pop="settings"]'));
     this.querySelectorAll('[data-appearance]').forEach((b) => b.addEventListener('click', () => {
       const mode = b.dataset.appearance;
@@ -349,6 +358,41 @@ bb-site-nav .bbs-fail { align-self: center; color: var(--bb-muted); font-size: 1
     this.querySelectorAll('[data-more]').forEach((b) => menuButton(b, (x, focus) => this.toggleMenu(x, focus)));
     const sw = this.querySelector('[data-switch]');
     if (sw) menuButton(sw, (x, focus) => this.toggleSwitch(x, focus));
+  }
+
+  async copyForAI(button) {
+    const status = this.querySelector('.bbs-copy-status');
+    button.disabled = true;
+    status.textContent = '';
+    try {
+      const text = await this.context.handoff(this._navUrl);
+      try {
+        await navigator.clipboard.writeText(text);
+        status.textContent = 'AI context copied';
+      } catch {
+        // WHY keep a selectable copy: browsers can deny clipboard access on a static or embedded site.
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bbs-handoff';
+        dialog.setAttribute('aria-label', 'Copy for AI');
+        dialog.innerHTML = '<label>Use your copy shortcut to copy the AI context.<textarea readonly></textarea></label><form method="dialog"><button>Close</button></form>';
+        const field = dialog.querySelector('textarea');
+        field.value = text;
+        this.append(dialog);
+        dialog.addEventListener('close', () => { dialog.remove(); button.focus(); }, { once: true });
+        dialog.showModal();
+        field.focus();
+        field.select();
+        if (document.execCommand('copy')) {
+          dialog.close();
+          status.textContent = 'AI context copied';
+        }
+      }
+    } catch {
+      status.textContent = 'Could not load AI context. Try again.';
+    } finally {
+      button.disabled = false;
+      setTimeout(() => { status.textContent = ''; }, 2600);
+    }
   }
 
   /** Priority-plus, per row: short labels first, then fold (the highest priority number first, right to left) until the

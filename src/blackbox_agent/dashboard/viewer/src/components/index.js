@@ -13,6 +13,7 @@ import './bb-idea-views.js';
 import './bb-kpi-strip.js';
 import './bb-lineage.js';
 import './bb-links.js';
+import './bb-live-agents.js';
 import './bb-markdown.js';
 import './bb-nav.js';
 import './bb-needs-you.js';

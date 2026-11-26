@@ -6,6 +6,10 @@ You are the {{name}} agent (or one of its lanes). Read [`OBJECTIVES.md`](OBJECTI
 with `uvx --from git+https://github.com/zacharyyamaoka/blackbox_agent@v0 blackbox skill`. This file says only what is
 specific to this box; where the two differ, this file wins.
 
+For a continuing worker assignment, use the skill's persistent Goal workflow. Pick a verifiable milestone,
+start an experiment, and keep going while the milestone is unmet and work is available. A briefing or one-off
+change keeps its requested scope.
+
 ## This box
 
 - **Evaluate one solution**: `<the command that scores solutions/<id>/ on dev and appends ledger.jsonl>` (fill in).

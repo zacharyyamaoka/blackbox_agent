@@ -26,9 +26,15 @@ goal would be a second place to keep in step), up to three sub-bullets under an 
         - Goal: G2 · step 3 · objective        it serves G2, third in G2's plan, aimed at the objective criterion
         - Effort: 45 min                       box time, bottom up (min or h); Zach's ideas are never sized
         - Expect: tool_track_rms_mm −4 %       its bet: <objective|gate> ±N % (or a range), or <spec id> → pass
+        - By: 2026-11-25T21:30-07:00           when it lands (round 3, CONTRACT §27): the Planned line steps here by
+                                               the Expect bet; '- By: 21:30' = that time on its goal's set day, in the
+                                               goal's offset; no By = the Effort × buffer bottom-up time, drawn hollow
 
 `· step N` only where the plan is not the file's order (stepped ideas first by N, then the rest in file order); the
 criterion (`objective`, a gate id, a spec id, `gates`) is optional: an idea without one serves the goal as a whole.
+Only an idea that serves a goal (a `- Goal:` line) has its Effort / Expect / By read: the same words under any other idea
+are the box's own prose (old boxes wrote "- Expect: dev ... below 0.031 mm" as a prediction) and are never refused
+(round 3, Zach 2026-11-25: 8 amber lines of legacy predictions at the top of his page were noise).
 A note or a line this reader refuses never stops the fold: it lands in `problems` as {lint, where, what, fix}, the same
 shape `blackbox check` prints ("[lint] where: what; fix: fix"), and the goal (or the link) is left out.
 
@@ -106,7 +112,7 @@ def text_of(p: dict) -> str:
 
 # ── the box's own ids ─────────────────────────────────────────────────────────────────────────────────────────────
 
-def box_ids(state: dict, ledger: list | None = None) -> dict:
+def box_ids(state: dict, ledger: list | None = None, measurements: dict | None = None) -> dict:
     """What a goal may name, read from the folded state (and the ledger's diagnostics, when given)."""
     gates = [g["id"] for g in state.get("gates") or []]
     diags = set()
@@ -117,7 +123,7 @@ def box_ids(state: dict, ledger: list | None = None) -> dict:
     return {
         "objective": obj.get("name"), "ruler": obj.get("ruler"), "unit": obj.get("unit") or "",
         "gates": gates, "gate_rows": {g["id"]: g for g in state.get("gates") or []},
-        "diagnostics": sorted(diags - set(gates)),
+        "diagnostics": sorted(diags - set(gates)), "measurements": sorted(measurements or {}),
         "specs": [r["id"] for r in ((state.get("spec") or {}).get("requirements") or [])],
         "spec_rows": {r["id"]: r for r in ((state.get("spec") or {}).get("requirements") or [])},
         "ideas": [i.get("iid") or i.get("id") for i in state.get("ideas") or []],
@@ -181,6 +187,8 @@ def criterion(line: str, ids: dict, where: str) -> tuple[dict | None, dict | Non
             c = {"kind": "gate", "ref": kid, "op": op, "value": value, **extra}
         elif kid in ids["diagnostics"]:
             c = {"kind": "diagnostic", "ref": kid, "op": op, "value": value, **extra}
+        elif kid in ids.get("measurements", []):
+            c = {"kind": "measurement", "ref": kid, "op": op, "value": value, **extra}
         else:
             every = [ids["objective"], *ids["gates"], *ids["diagnostics"]]
             near = _near(kid, every)
@@ -279,6 +287,30 @@ def read_notes(notes: dict[str, str], ids: dict) -> dict:
 # ── the ideas' sub-bullets ────────────────────────────────────────────────────────────────────────────────────────
 
 ALIAS = {"gate:all": "gates", "all": "gates"}
+BY = re.compile(r"^\s+- By:\s*(.*?)\s*$")
+BY_CLOCK = re.compile(r"^(\d{1,2}):(\d{2})$")
+BY_FIX = "write '- By: 2026-11-25T21:30-07:00' (a date-time with its offset) or '- By: 21:30' (that time on its goal's set day)"
+
+
+def by_time(value: str, goal_set: str) -> str | None:
+    """A `- By:` value -> an ISO date-time with offset, or None when it is not one. '21:30' = that wall time on the
+    goal's set day in the goal's offset; a date-time without an offset takes the goal's offset."""
+    from datetime import datetime
+    v = value.strip()
+    gs = datetime.fromisoformat(goal_set)
+    m = BY_CLOCK.match(v)
+    try:
+        if m:
+            h, mi = int(m.group(1)), int(m.group(2))
+            if h > 23 or mi > 59:
+                return None
+            return gs.replace(hour=h, minute=mi, second=0, microsecond=0).isoformat()
+        dt = datetime.fromisoformat(v.replace(" ", "T", 1))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=gs.tzinfo)
+    return dt.isoformat()
 
 
 def read_links(ideas_text: str, rows: list[dict], goals: list[dict], ids: dict, core_box: dict) -> dict:
@@ -300,7 +332,13 @@ def read_links(ideas_text: str, rows: list[dict], goals: list[dict], ids: dict, 
             continue
         iid = row.get("iid") or row["id"]
         rec = {"goals": [], "steps": {}, "aims": {}, "effort": None, "expect": None, "expect_text": None, "index": idea.index}
+        held = []   # the Effort / Expect / By problems, kept only if the idea serves a goal (round 3)
+        by_raw = None
         for k, raw in enumerate(idea.raw.splitlines()[1:], 1):
+            bm = BY.match(raw)
+            if bm:
+                by_raw = (bm.group(1), f"ideas.md:{idea.line_no + k}")
+                continue
             m = bets.SUB.match(raw)
             if not m:
                 continue
@@ -335,15 +373,37 @@ def read_links(ideas_text: str, rows: list[dict], goals: list[dict], ids: dict, 
                 try:
                     rec["effort"] = bets._minutes(value, where)
                 except ValueError as e:
-                    probs.append(problem("goal-idea", where, f"'- Effort: {value}' is not a duration",
-                                         str(e).split(": ", 2)[-1].replace("write ", "write ", 1)))
+                    held.append(problem("goal-idea", where, f"'- Effort: {value}' is not a duration",
+                                        str(e).split(": ", 2)[-1].replace("write ", "write ", 1)))
             else:
+                pm = bets.PCT_BET.match(value)
+                if pm and pm.group(1) in set(ids.get("measurements") or []) | set(ids.get("diagnostics") or []):
+                    # WHY (round 3, trajectory_tracking_agent's G2 / G3 at f9b372a): a goal's targets may be benchmark
+                    # readings (goals/metrics.json) or ledger diagnostics, and its Planned line steps on their bets too;
+                    # 02's reader knows only the objective and the gates
+                    lo = float(pm.group(2).replace("−", "-"))
+                    hi = float(pm.group(3).replace("−", "-")) if pm.group(3) else lo
+                    rec["expect"] = {"kind": "pct", "ref": pm.group(1), "lo": lo, "hi": hi, "text": value}
+                    rec["expect_text"] = value
+                    continue
                 try:
                     rec["expect"] = bets._bet(value, where, core_box)
                     rec["expect_text"] = value
                 except ValueError as e:
-                    probs.append(problem("goal-idea", where, f"'- Expect: {value}' is not a bet the line can read",
-                                         str(e).split("': ", 1)[-1]))
+                    held.append(problem("goal-idea", where, f"'- Expect: {value}' is not a bet the line can read",
+                                        str(e).split("': ", 1)[-1]))
+        if not rec["goals"]:
+            # WHY: an idea that serves no goal is not on any roadmap; its Effort / Expect / By are its own prose
+            rec["effort"] = rec["expect"] = rec["expect_text"] = None
+            held, by_raw = [], None
+        probs += held
+        if by_raw is not None:
+            when = by_time(by_raw[0], by_id[rec["goals"][0]]["set"])
+            if when is None:
+                probs.append(problem("goal-idea", by_raw[1], f"'- By: {by_raw[0]}' is not a time", BY_FIX))
+            else:
+                rec["by"] = when
+                rec["by_text"] = by_raw[0]
         if row.get("lane") == "human" and rec["effort"] is not None:
             # WHY: nobody can estimate Zach; an Effort under one of his ideas would read as a date
             probs.append(problem("goal-idea", f"ideas.md:{idea.line_no}", f"{iid} is Zach's (Suggestions for Zach) and carries an Effort",

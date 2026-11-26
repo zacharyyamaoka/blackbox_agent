@@ -1,24 +1,14 @@
 {
  "what": "data-ui as this app serves it: re-vendor with data-ui vendor, never edit",
  "repo": "data-ui",
- "ref": "78d2049",
+ "ref": "57bfaf60",
  "version": "0.1.0",
- "commit": "78d2049053f43bf81d3fdedfdc43e338a9b0bf1e",
+ "commit": "57bfaf60db7cd8b105f7d29dfe6342e3dba7f5a5",
  "on_main": true,
- "commit_date": "2026-11-24T20:33:56-07:00",
- "subject": "Merge lane/nested-gates: the nested gate matrix as stock data-ui (CONTRACT §56): a tracker in matrix mode nests by groupBy path in its first column (fold to any depth, every cell one size, rows drawn in a window, the names' column resizable), tracker.axes + x (a property, a list, a date by hour/day/week/month, pick the latest or leading member of a column, said in the header and a caption), tracker.rollup count | worst (v4's counting bar, v1's strip), noun, fold; data-views-cell and data-views-column (cancelable) for a host, picked marks the cells it answers; a status word keeps its glyph whatever tone a map gives it; the gates-nested gallery case (trajectory_tracking_agent's spec across 61 commits and its ruler across 34 iterations, from lane G's fold, held to G's own tree states)",
- "parents": [
-  {
-   "commit": "354ccdde6eab35661ca689179f7496a4d15e7506",
-   "subject": "drill actions: {column|path} keeps a relative path's '/' (each segment encoded; a plain {column} stays one encoded part, as before), and a row shows only the actions whose columns it has (a row without a recording offers no 'open the recording'); CONTRACT §53"
-  },
-  {
-   "commit": "9e384ce6a1236e16e0aae6a3f3b54db61f5d78e8",
-   "subject": "Merge main @ 354ccdde into lane/nested-gates (drill actions keep a relative path's /)"
-  }
- ],
+ "commit_date": "2026-11-25T20:15:50-07:00",
+ "subject": "timeline opens on every start and end, the data filling 75 % of the width (defaultWindow; strays trimmed, one instant gets a day), never vis's pixel fit",
  "built_with": "node build.mjs on a git archive of the commit (data-ui vendor, Node v22.18.0)",
- "manifest_sha256": "f8e393c3471f1abf9e8a0d5575e71c0a2933fc0fbcaa8dfd8f56c8562ff22f2d",
+ "manifest_sha256": "f9b51a5b2176e262e69cb3beb5090d206e1f1afe9e872dd34ffe9a703d5438e8",
  "kit_dir": ".",
  "views": [
   "kpi",
@@ -67,9 +57,9 @@
  "files": {
   "dashboard-arrange.js": "1e20a61a3bf1ee1af67116b4327cf5e58dd24e0ba80908fa26ef7a3acddfa461",
   "dashboard-edit.js": "23b02195cbd8f68cfd8d095351eaf1df4a4ec5f1ca41432222744aa686546d25",
-  "dashboard.js": "c0a7aa08222738507d41467fac9b69216f09a0ae4977986301054cf3e3a4728f",
-  "data-ui.css": "32ec26684af45cb6b5f4fe19bdc527f27bf8717ac6a7f757f6319ffe69fb72e2",
-  "data-ui.js": "c37cf901d82d5f7846161ea46931330e5ed013f3bff144cef213e067da20abde",
+  "dashboard.js": "20f39f863e3b2c44455b6aa5274a41d5de7445050f010e13712f8f810573ec5d",
+  "data-ui.css": "f69e52a860363c368db675d871dc23739b56f35568c3913a13d54d2626f01230",
+  "data-ui.js": "2934c43597e44e67bc35ce708ae2b62ffe76327e0291c39e9fea54c11eec71e9",
   "LICENSES.md": "92f05a8eaada74b5e84455845a1dd8c6fd944b14d58aad15db8f9de90ee4ec87",
   "like-obsidian/apl-DPzuoR55.js": "d9ae313ca35cce7ff3137b9ffef5791804c393bccfc4a1c7102c51809cbefa69",
   "like-obsidian/asciiarmor-CxCuwrUt.js": "07907c87913cb7758da611a844f17d7b75452edf60d6813f40cf64c1021be6c5",
@@ -194,9 +184,9 @@
   "like-obsidian/xquery-BDmbb_FW.js": "621cf20090ee0d98e8f73ad672c23ee1e8daba19365fe6bbfc0290694e573793",
   "like-obsidian/yacas-whoxMgik.js": "0a529c18233de4d9085fd599b3df37e420579209797ad765b2c877425420402f",
   "like-obsidian/z80-B5yJwh_1.js": "07f94c69896336585ab03328d2b7c0a32e0f262eb378cf1e9fa601d5b75611a5",
-  "manifest.json": "f8e393c3471f1abf9e8a0d5575e71c0a2933fc0fbcaa8dfd8f56c8562ff22f2d",
+  "manifest.json": "f9b51a5b2176e262e69cb3beb5090d206e1f1afe9e872dd34ffe9a703d5438e8",
   "resize.js": "2c78d1b28e6abf1a8cd83c8fb6eae17d9c069ca468956fe96b07f738155e71d9",
-  "rowmodel-worker.js": "4a0305d9d60bb9a87888501d4a79ee1a50a17793a50984de7c18b6b5aee124ab",
+  "rowmodel-worker.js": "d285dc58311e3caf0691cf49d8f3485a43571eb25c58945d3c74ca2befdf1c3c",
   "sources.js": "bd9aeb6039baaf046244f9b76c1975ef7d74f3930c3d27f38d89e8f8f35c686d",
   "views/calendar.js": "4d90fce71e374c547d5d30169ceb19a95b9dfbaa2f70a1b5aa637b6e89f9fdb6",
   "views/cards-lightbox-L5DT3GT3.js": "7db439db2e321704d08c8afd967480760b10a9def548d475f7d16f078825be08",
@@ -318,8 +308,8 @@
   "views/list.js": "722214a84fa1aaa933a473a8dd9824a65752e243afdb5380c722226d56df87e9",
   "views/mesh.js": "a1851c28bfe11fc110b1c0230332bc30fd6b1fd481bf5032f61645dd57c95d51",
   "views/pace.js": "50748781c3d9b527a7f7c8c58a156b8af7f8afdf619b2849e8d8c5dbafb38330",
-  "views/table.js": "9e99c175075e6edfa2a8b08411f2eb9ea14dcd3961662863fdb36fa40de94b1b",
-  "views/timeline.js": "a51a1bd75a749143ec638f6a0720a333d8ab6fbe4d55582f4011b184895a50e5"
+  "views/table.js": "7767f4dba36b4dc7f2debf8865d37c8b5439561bc39eb6ef17538bf9b5587034",
+  "views/timeline.js": "9fc5a2fb164d5908dc94997a19c3336ea66220e3c432c3dd5dcfa17e544b295e"
  },
  "repo_note": "the local checkout's path is left out: this copy is published on a public site"
 }

@@ -10,6 +10,71 @@ const ASSET = /^(?!\/)(?![a-z]+:)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*(?:^|\/)solution
 // file named nav.json, relative, never under solutions/.
 const NAV = /^(?![a-z][a-z0-9+.-]*:)(?!\/)(?!.*(?:^|\/)solutions\/)(?:\.\.\/|\.\/)*(?:[\w.-]+\/)*nav\.json$/i;
 
+function localWork(stateUrl, ref) {
+  const state = stateUrl && new URL(stateUrl);
+  if (!state || !['localhost', '127.0.0.1', '[::1]'].includes(state.hostname) ||
+      !/^\/box\/[^/]+\/data\/state\.json$/.test(state.pathname)) {
+    return { watchWork(fn) { fn(null); return () => {}; }, changeWork() { return Promise.reject(new Error('Local work is unavailable here')); } };
+  }
+  const url = new URL('live-work.json', state);
+  const listeners = new Set();
+  let current = null;
+  let timer;
+  let requesting;
+  const refresh = () => requesting ??= (async () => {
+    try {
+      const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      if (response.status === 404 && current === null) return;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (data.schema !== 'bb-live-work/1') throw new Error('Unknown live-work response');
+      if (ref && ref !== data.freshness?.built) {
+        // The visible board still has the older row IDs until the host loads the new committed build.
+        data.ideas = [];
+        data.freshness = { ...data.freshness, dashboard: 'behind', issues: [...(data.freshness?.issues || []),
+          { source: 'Dashboard', detail: 'The open page is waiting for the current dashboard' }] };
+      }
+      current = data;
+    } catch (error) {
+      if (current) current = { ...current, fetch_error: String(error.message || error) };
+    } finally {
+      for (const fn of listeners) fn(current);
+      requesting = null;
+    }
+  })();
+
+  return {
+    watchWork(fn) {
+      listeners.add(fn);
+      fn(current);
+      if (listeners.size === 1) {
+        refresh();
+        timer = setInterval(refresh, 2000);
+      }
+      return () => { listeners.delete(fn); if (!listeners.size) clearInterval(timer); };
+    },
+    async changeWork(change) {
+      if (window.parent === window) throw new Error('Open the track in Vibe Tracks to change idea ownership');
+      const id = crypto.randomUUID();
+      const result = await new Promise((resolve, reject) => {
+        const stop = () => { clearTimeout(timeout); window.removeEventListener('message', receive); };
+        const receive = (event) => {
+          if (event.source !== window.parent || event.origin !== location.origin || event.data?.vt !== 'box-work-result' || event.data.id !== id) return;
+          stop();
+          if (event.data.error) reject(new Error(event.data.error));
+          else resolve(event.data.result);
+        };
+        const timeout = setTimeout(() => { stop(); reject(new Error('Vibe Tracks did not return a result')); }, 15000);
+        window.addEventListener('message', receive);
+        window.parent.postMessage({ vt: 'box-work', id, change: { ...change, ref } }, location.origin);
+      });
+      await requesting;
+      await refresh();
+      return result;
+    },
+  };
+}
+
 export function fill(pattern, vars) {
   return String(pattern || '').replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(vars[k] ?? ''));
 }
@@ -19,6 +84,7 @@ export function makeContext({ state = null, stateUrl = null, pageUrl = null, pag
   const base = pageUrl || (typeof document !== 'undefined' ? document.baseURI : 'http://localhost/');
   const listed = new Set(((state && state.playback && state.playback.runs) || []).map((r) => r.path));
   const ctx = {
+    ...localWork(stateUrl, state?.source?.ref),
     page,
     links: all,
     /** The state.json's URL (null when the state was handed over, not fetched): a bb-run/1 record's media resolve beside
@@ -47,6 +113,14 @@ export function makeContext({ state = null, stateUrl = null, pageUrl = null, pag
       const doc = await res.json();
       if (!doc || doc.schema !== 'bb-site-nav/1') throw new Error(`${path}: schema is ${doc && doc.schema}, not bb-site-nav/1`);
       return doc;
+    },
+    /** The committed agent brief generated beside the nav, as text. */
+    async handoff(navUrl) {
+      const url = new URL('data/agent-handoff.md', navUrl);
+      if (url.origin !== new URL(base).origin) throw new Error('refused: agent brief is outside the box site');
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`agent brief: HTTP ${res.status}`);
+      return res.text();
     },
     /** Fire bb-open from `el`; follow href unless a listener prevented it. */
     open(el, detail) {

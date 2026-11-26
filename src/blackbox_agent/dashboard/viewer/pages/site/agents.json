@@ -13,6 +13,9 @@
         "current": "agents"
       }
     },
+    "sessions": {
+      "type": "bb-live-agents"
+    },
     "rows": {
       "type": "bb-data-page",
       "settings": {
@@ -26,6 +29,7 @@
   },
   "order": [
     "tabs",
+    "sessions",
     "rows"
   ]
 }
